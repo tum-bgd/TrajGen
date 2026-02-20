@@ -8,13 +8,9 @@ class ConstantTimeStepsTemporalStrategy:
 
     def __call__(self, trajectory: Trajectory) -> Trajectory:
         length = len(trajectory.ls.coords)
-        trajectory.set_time(
-            list(
-                range(
-                    self.config.get_next_tmin(), length * self.time_step, self.time_step
-                )
-            )
-        )
+        time_step = self.config.get_next_time_step()
+        t_min = self.config.get_next_tmin()
+        trajectory.set_time([t_min + i * time_step for i in range(length)])
         return trajectory
 
     @staticmethod
