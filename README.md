@@ -1,4 +1,4 @@
-# Awesome-Trajectories
+# TrajGen
 This is a repository which holds different trajectory generation algorithms, which are meant to be used for reasearch and development of spatial-temporal data services. 
 
 The repository features an easy to use frontent to configure the trajectory generation. 
