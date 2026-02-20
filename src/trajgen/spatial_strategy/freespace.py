@@ -89,8 +89,7 @@ class FreespaceStrategy:
 
                 # Check collision-free
                 collision = any(
-                    candidate.within(obstacle.buffered)
-                    for obstacle in self.obstacles
+                    candidate.within(obstacle.buffered) for obstacle in self.obstacles
                 )
 
                 if not collision:
