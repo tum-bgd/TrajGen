@@ -12,6 +12,7 @@ from .requirements_helpers import bbox_requirements
 @dataclass
 class Obstacle:
     polygon: Polygon
+    buffered: Polygon
     id: int
 
 
@@ -55,7 +56,7 @@ class FreespaceStrategy:
 
                 # Check no overlap with existing
                 if all(obs_poly.intersects(ob.polygon) is False for ob in obstacles):
-                    obstacles.append(Obstacle(obs_poly, i))
+                    obstacles.append(Obstacle(obs_poly, obs_poly.buffer(0.02), i))
                     break
 
         return obstacles
@@ -88,7 +89,7 @@ class FreespaceStrategy:
 
                 # Check collision-free
                 collision = any(
-                    candidate.within(obstacle.polygon.buffer(0.02))
+                    candidate.within(obstacle.buffered)
                     for obstacle in self.obstacles
                 )
 
