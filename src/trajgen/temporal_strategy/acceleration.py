@@ -25,9 +25,7 @@ class AccelerationTemporalStrategy:
                     time_stamps.append(t + time_stamps[-1])
                 continue
             t = (-v0 + (v0**2 + 2 * a * spatial_length) ** 0.5) / a
-            print(t, time_stamps[-1])
             time_stamps.append(t + time_stamps[-1])
-            print(time_stamps)
 
         trajectory.set_time(time_stamps)
         return trajectory
