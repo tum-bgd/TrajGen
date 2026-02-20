@@ -8,7 +8,7 @@ The repository features an easy-to-use frontend for configuring trajectory gener
 
 # Install and Check Installation
 ## Requirements and Dependencies
-The project is organized as a Python project managed with the uv package manager. 
+The project is organized as a Python project managed with the [uv package manager](https://docs.astral.sh/uv/getting-started/installation/). 
 It requires at least Python 3.10 and the dependencies listed in `pyproject.toml`.
 
 
