@@ -9,6 +9,87 @@ from src.utils.helper import (
 from src.method_overview import ALL_METHOD_DESCRIPTIONS, ALL_METHODS  # noqa
 
 
+def _show_osm_bbox_map() -> None:
+    """Render an interactive Folium map so the user can draw a bounding box.
+
+    The drawn rectangle updates the session-state keys
+    ``config_get_next_x_min/x_max/y_min/y_max`` (longitude / latitude) and
+    triggers a rerun so the numeric inputs above reflect the new values.
+    """
+    import folium
+    from folium.plugins import Draw
+    from streamlit_folium import st_folium
+
+    st.subheader("Select Area on Map")
+    st.write(
+        "Draw a rectangle on the map to set the bounding box. "
+        "The Longitude / Latitude fields above will update automatically."
+    )
+
+    # Read current bbox from session state, fall back to Munich city centre
+    lon_min = float(st.session_state.get("config_get_next_x_min", 11.54))
+    lon_max = float(st.session_state.get("config_get_next_x_max", 11.62))
+    lat_min = float(st.session_state.get("config_get_next_y_min", 48.12))
+    lat_max = float(st.session_state.get("config_get_next_y_max", 48.17))
+
+    # Guard against stale generic bbox values (e.g. 0–1 from other methods)
+    if not (-180 <= lon_min < lon_max <= 180 and -90 <= lat_min < lat_max <= 90):
+        lon_min, lon_max, lat_min, lat_max = 11.54, 11.62, 48.12, 48.17
+
+    center_lat = (lat_min + lat_max) / 2
+    center_lon = (lon_min + lon_max) / 2
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=13)
+    Draw(
+        export=False,
+        draw_options={
+            "rectangle": True,
+            "polyline": False,
+            "polygon": False,
+            "circle": False,
+            "marker": False,
+            "circlemarker": False,
+        },
+    ).add_to(m)
+
+    # Show current bbox as a semi-transparent blue overlay
+    folium.Rectangle(
+        bounds=[[lat_min, lon_min], [lat_max, lon_max]],
+        color="blue",
+        fill=True,
+        fill_opacity=0.1,
+    ).add_to(m)
+
+    result = st_folium(m, height=450, use_container_width=True)
+
+    # Update session state when the user finishes drawing a new rectangle
+    drawing = result and result.get("last_active_drawing")
+    if drawing and drawing.get("geometry", {}).get("type") == "Polygon":
+        coords = drawing["geometry"]["coordinates"][0]
+        lons = [c[0] for c in coords]
+        lats = [c[1] for c in coords]
+        new_x_min = min(lons)
+        new_x_max = max(lons)
+        new_y_min = min(lats)
+        new_y_max = max(lats)
+
+        # Only rerun when the drawn bbox is actually different from current values
+        if (
+            st.session_state.get("config_get_next_x_min") != new_x_min
+            or st.session_state.get("config_get_next_x_max") != new_x_max
+            or st.session_state.get("config_get_next_y_min") != new_y_min
+            or st.session_state.get("config_get_next_y_max") != new_y_max
+        ):
+            st.session_state["config_get_next_x_min"] = new_x_min
+            st.session_state["config_get_next_x_max"] = new_x_max
+            st.session_state["config_get_next_y_min"] = new_y_min
+            st.session_state["config_get_next_y_max"] = new_y_max
+            # Ensure mode keys are set so Config.__getattr__ can resolve them
+            for key in ("x_min", "x_max", "y_min", "y_max"):
+                st.session_state[f"config_get_next_{key}_mode"] = "fixed for dataset"
+            st.rerun()
+
+
 def show_spatial_method_selection_step():
     st.header("📐 Step 2: Spatial Method Selection")
 
@@ -99,6 +180,10 @@ def show_spatial_method_selection_step():
         for req_name, req_info in requirements.items():
             st.write(f"- **{req_info['short_name']}**: {req_info['description']}")
             universal_user_input_method(req_name, req_info)
+
+        if selected_spatial_method == "OSM Sampling":
+            _show_osm_bbox_map()
+
         # Navigation buttons
         st.divider()
         col1, col2, col3 = st.columns([1, 1, 1])

@@ -1,29 +1,32 @@
 import random
+from typing import Any
+
 from shapely.geometry import LineString, Point
 import osmnx as ox
-from pyrosm import OSM
 import numpy as np
-import os
 import networkx as nx
-import osmium
+
 from ..config import Config
 from ..trajectory import Trajectory
-from .requirements_helpers import bbox_requirements
 
 
 class OsmSamplingStrategy:
     """
     Generate trajectories by sampling shortest paths between public-transport
     'hotspot' nodes on an OSM road graph, adding perpendicular jitter.
+
+    The road graph is fetched live from the Overpass API for the bounding box
+    configured in the UI (no local PBF file required).
     """
 
     config: Config
     _rng: random.Random
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, progress_callback=None):
         self.config = config
+        # Optional callable(pct: int, msg: str) for UI progress reporting
+        self._progress_callback = progress_callback
 
-        # Optional: bound total graph construction to one-time cost
         self._rng = random.Random(config.seed)
         self._G: nx.MultiDiGraph | None = None  # unprojected graph
         self._Gp: nx.MultiDiGraph | None = None  # projected graph
@@ -33,10 +36,17 @@ class OsmSamplingStrategy:
 
     def __call__(self, id: int) -> Trajectory:
         """
-        Generate a single normalized jittered OSM-based trajectory for the given id.
+        Generate a jittered OSM-based trajectory for the given id.
+
+        Coordinates are in geographic (lon, lat) space — not normalised —
+        so they can be displayed directly on a map.
         """
         if self._G is None or self._Gp is None or self._hotspots is None:
             raise RuntimeError("OSM graphs or hotspots not initialized.")
+
+        # Reseed per trajectory so each ID is deterministic regardless of
+        # call order and independent of construction-time RNG state.
+        self._rng = random.Random(self.config.seed + id)
 
         for _attempt in range(self.config.osm_max_attempts_per_traj):
             s, t = self._sample_od_nodes(self._hotspots, self._G)
@@ -48,142 +58,81 @@ class OsmSamplingStrategy:
             if len(xs_m) < 5:
                 continue
 
-            # Reproject to lat/lon
+            # Reproject jittered metric coords back to lon/lat
             line_m = LineString([Point(x, y) for x, y in zip(xs_m, ys_m)])
             line_ll, _ = ox.projection.project_geometry(
                 line_m, crs=self._Gp.graph["crs"], to_crs="EPSG:4326"
             )
-            if isinstance(line_ll, LineString):
-                xs_ll, ys_ll = zip(*line_ll.coords)
-            else:
-                xs_ll, ys_ll = xs_m, ys_m
-
-            xs_arr = np.asarray(xs_ll, dtype=float)
-            ys_arr = np.asarray(ys_ll, dtype=float)
-
-            # per-trajectory min-max normalization to [0, 1]
-            xs_norm, ys_norm = self._normalize_xy(xs_arr, ys_arr)
-
-            if len(xs_norm) == 0:
+            if not isinstance(line_ll, LineString) or len(line_ll.coords) == 0:
                 continue
 
-            ls = LineString(np.column_stack((xs_norm, ys_norm)))
-            return Trajectory(id=id, ls=ls)
+            return Trajectory(id=id, ls=line_ll)
 
-        # If we exhausted attempts, you may choose to raise or fall back.
         raise RuntimeError("Failed to generate OSM-based trajectory after retries.")
 
     # ------------------------------------------------------------------
-    # initialization helpers
+    # Initialization helpers
     # ------------------------------------------------------------------
 
+    def _report(self, pct: int, msg: str) -> None:
+        print(msg)
+        if self._progress_callback:
+            self._progress_callback(pct, msg)
+
     def _init_graph_and_hotspots(self) -> None:
-        ox.settings.overpass_max_query_area_size = 2_000_000
-        ox.settings.overpass_timeout = 300
         ox.settings.use_cache = True
-        ox.settings.log_console = True  # TODO: Set to False to disable console logging
-        ox.settings.log_level = "WARNING"
+        ox.settings.log_console = False
 
-        if not os.path.exists(self.config.osm_pbf_path):
-            raise FileNotFoundError(
-                f"OSM PBF file not found: {self.config.osm_pbf_path}"
-            )
-
-        print(f"Loading drivable OSM network from {self.config.osm_pbf_path}")
-
-        bbox = [
+        # bbox = (lon_min, lat_min, lon_max, lat_max) per osmnx 2.x convention
+        # config stores x = longitude, y = latitude
+        bbox = (
             self.config.x_min,
             self.config.y_min,
             self.config.x_max,
             self.config.y_max,
-        ]
-        print(f"Validating bbox {bbox} against PBF bounds...")
-        if not self._pbf_has_bbox_coverage(
-            self.config.x_min, self.config.y_min, self.config.x_max, self.config.y_max
-        ):
-            raise ValueError(
-                f"BBox {bbox} has NO OVERLAP with PBF {self.config.osm_pbf_path}. "
-                "Check coordinates or use larger bbox."
-            )
-
-        print("Loading OSM data and building road network graph...")
-        osm = OSM(self.config.osm_pbf_path, bounding_box=bbox)
-        print("Building OSM road network graph...")
-        # Load data seperately and strip aLL extra columns immediately
-
-        nodes, edges = osm.get_network(
-            network_type="driving", nodes=True  # Returns (nodes_gdf, edges_gdf) tuple!
         )
-        nodes = nodes[["id", "x", "y"]]
-        edges = edges[["u", "v", "length", "geometry"]]
 
-        self._G = osm.to_graph(nodes, edges)
+        self._report(10, f"Downloading drivable OSM network for bbox {bbox} ...")
+        self._G = ox.graph_from_bbox(bbox, network_type="drive")
 
-        print("Projecting graph to local metric CRS")
-        self._Gp = ox.project_graph(
-            self._G
-        )  # auto-chooses UTM-like CRS [web:6][web:15]
+        self._report(60, "Projecting graph to local metric CRS ...")
+        self._Gp = ox.project_graph(self._G)
 
-        print("Collecting public-transport hotspots from PBF")
-        self._hotspots = self._get_pt_hotspots(self._G)
+        self._report(75, "Collecting public-transport hotspots ...")
+        self._hotspots = self._get_pt_hotspots(self._Gp, bbox)
+
+        self._report(100, f"Done — {len(self._hotspots)} PT hotspots found.")
 
         if not self._hotspots:
-            raise RuntimeError("No public transport hotspots found in OSM PBF.")
+            raise RuntimeError(
+                "No public transport hotspots found in the selected area."
+            )
 
     # ------------------------------------------------------------------
-    # logic lifted/adapted from your script
+    # Logic
     # ------------------------------------------------------------------
 
-    def _pbf_has_bbox_coverage(
-        self, lon_min: float, lat_min: float, lon_max: float, lat_max: float
-    ) -> bool:
-        """Check if bbox intersects PBF bounds"""
-        try:
-            with osmium.io.Reader(self.config.osm_pbf_path) as reader:
-                header = reader.header()
-                bbox_header = header.box()
-                print(f"PBF bounds: {bbox_header}")
-                if bbox_header.valid:
-                    bl = bbox_header.bottom_left  # osmium.osm.Location
-                    tr = bbox_header.top_right  # osmium.osm.Location
-                    h_lon_min, h_lat_min = bl.lon, bl.lat
-                    h_lon_max, h_lat_max = tr.lon, tr.lat
-                    return not (
-                        lon_max < h_lon_min
-                        or lon_min > h_lon_max
-                        or lat_max < h_lat_min
-                        or lat_min > h_lat_max
-                    )
-
-        except Exception as e:
-            print(f"Warning: Could not validate bbox (using anyway): {e}")
-            return True  # Fail-open for safety
-
-    def _get_pt_hotspots(self, G: nx.MultiDiGraph) -> list[int]:
-        osm = OSM(self.pbf_path)
-
-        # Closely mirrors your pt_tags; implemented with pyrosm POI API. [web:7][web:13]
+    def _get_pt_hotspots(self, Gp: nx.MultiDiGraph, bbox: tuple) -> list[int]:
         pt_tags: dict[str, Any] = {
             "highway": ["bus_stop"],
             "public_transport": ["stop_position", "station"],
             "railway": ["station", "halt", "tram_stop"],
         }
-
-        pois = osm.get_pois(custom_filter=pt_tags)
-
+        pois = ox.features_from_bbox(bbox, tags=pt_tags)
+        # Project POI geometries to match Gp so scipy KDTree is used instead
+        # of the scikit-learn Ball Tree (which is required for unprojected graphs)
+        pois_proj = pois.to_crs(Gp.graph["crs"])
         nodes: list[int] = []
-        for pt in pois.geometry.centroid:
-            nearest = ox.distance.nearest_nodes(G, pt.x, pt.y)
+        for pt in pois_proj.geometry.centroid:
+            nearest = ox.distance.nearest_nodes(Gp, pt.x, pt.y)
             nodes.append(nearest)
-
         hotspots = list(sorted(set(nodes)))
-        print("Found %d PT hotspots", len(hotspots))
+        print(f"Found {len(hotspots)} PT hotspots")
         return hotspots
 
     def _sample_od_nodes(
         self, hotspots: list[int], G: nx.MultiDiGraph
     ) -> tuple[int, int]:
-        # independent RNG for reproducibility, biased to distinct nodes
         s = self._rng.choice(hotspots)
         t = self._rng.choice(hotspots)
         while t == s:
@@ -226,7 +175,7 @@ class OsmSamplingStrategy:
         nxp = -dy / norm
         nyp = dx / norm
 
-        offset = self._rng.normal(0.0, std)
+        offset = self._rng.gauss(0.0, std)
         xj = x + offset * nxp
         yj = y + offset * nyp
         return xj, yj
@@ -238,6 +187,8 @@ class OsmSamplingStrategy:
     ) -> tuple[np.ndarray, np.ndarray]:
         xs: list[float] = []
         ys: list[float] = []
+
+        jitter_std = self.config.osm_jitter_std_m
 
         for u, v in zip(path[:-1], path[1:]):
             data = min(
@@ -260,7 +211,7 @@ class OsmSamplingStrategy:
                 )
                 for _ in range(n_samples):
                     xj, yj = self._jitter_point_along_segment(
-                        x1, y1, x2, y2, self.jitter_std
+                        x1, y1, x2, y2, jitter_std
                     )
                     xs.append(xj)
                     ys.append(yj)
@@ -294,6 +245,7 @@ class OsmSamplingStrategy:
                 "short_name": "Max Hops",
                 "type": "get_int_function",
                 "default": 50,
+                "default_mode": "fixed for dataset",
                 "description": "Maximum number of nodes in a sampled path.",
                 "optional": False,
             },
@@ -301,6 +253,7 @@ class OsmSamplingStrategy:
                 "short_name": "Max Meters",
                 "type": "get_float_function",
                 "default": 5000.0,
+                "default_mode": "fixed for dataset",
                 "description": "Maximum path length in meters.",
                 "optional": False,
             },
@@ -308,29 +261,49 @@ class OsmSamplingStrategy:
                 "short_name": "Max Attempts",
                 "type": "get_int_function",
                 "default": 5,
+                "default_mode": "fixed for dataset",
                 "description": "Retry attempts per trajectory.",
                 "optional": True,
             },
-            **bbox_requirements(spatial_dim),
+            "get_next_osm_jitter_std_m": {
+                "short_name": "Jitter Std (m)",
+                "type": "get_float_function",
+                "default": 5.0,
+                "default_mode": "fixed for dataset",
+                "description": "Standard deviation (metres) of perpendicular jitter applied to path nodes.",
+                "optional": False,
+            },
+            # Bbox — same keys as bbox_requirements but with lat/lon defaults and labels
+            "get_next_x_min": {
+                "short_name": "Longitude Min",
+                "type": "get_float_function",
+                "default": 11.54,
+                "default_mode": "fixed for dataset",
+                "description": "Western boundary of the area (longitude, e.g. 11.54 for Munich).",
+                "optional": False,
+            },
+            "get_next_x_max": {
+                "short_name": "Longitude Max",
+                "type": "get_float_function",
+                "default": 11.62,
+                "default_mode": "fixed for dataset",
+                "description": "Eastern boundary of the area (longitude).",
+                "optional": False,
+            },
+            "get_next_y_min": {
+                "short_name": "Latitude Min",
+                "type": "get_float_function",
+                "default": 48.12,
+                "default_mode": "fixed for dataset",
+                "description": "Southern boundary of the area (latitude, e.g. 48.12 for Munich).",
+                "optional": False,
+            },
+            "get_next_y_max": {
+                "short_name": "Latitude Max",
+                "type": "get_float_function",
+                "default": 48.17,
+                "default_mode": "fixed for dataset",
+                "description": "Northern boundary of the area (latitude).",
+                "optional": False,
+            },
         }
-
-
-class _BBoxOverlapHandler(osmium.SimpleHandler):
-    """Lightweight handler to detect bbox overlap."""
-
-    def __init__(self, lon_min, lat_min, lon_max, lat_max):
-        super().__init__()
-        self.lon_min, self.lat_min = lon_min, lat_min
-        self.lon_max, self.lat_max = lon_max, lat_max
-        self.found_overlap = False
-        self._stop_after_overlap = False
-
-    def node(self, n):
-        # Stop scanning after first overlap (very fast)
-        if (
-            self.lon_min <= n.location.lon <= self.lon_max
-            and self.lat_min <= n.location.lat <= self.lat_max
-        ):
-            self.found_overlap = True
-            self._stop_after_overlap = True
-            raise osmium.Stop()

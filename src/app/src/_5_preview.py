@@ -59,7 +59,11 @@ def show_preview_step():
     )
 
     generate_trajectory(config)
-    plot_trajectory()
+
+    if st.session_state.get("selected_method") == "OSM Sampling":
+        plot_osm_trajectory()
+    else:
+        plot_trajectory()
 
     # Navigation buttons
     st.divider()
@@ -175,7 +179,20 @@ def construct_trajectory_generator(config: Config) -> Trajectory:
 
     # --- Instantiate strategies -----------------------------------------------
     if selected_method in ALL_SPATIAL_METHODS:
-        spatial_strategy = ALL_SPATIAL_METHODS[selected_method](config)
+        if selected_method == "OSM Sampling":
+            _bar = st.progress(0, "Downloading OSM road network…")
+            _status = st.empty()
+
+            def _osm_progress(pct: int, msg: str) -> None:
+                _bar.progress(pct, msg)
+                _status.caption(msg)
+
+            from trajgen.spatial_strategy.osm_sampling import OsmSamplingStrategy
+            spatial_strategy = OsmSamplingStrategy(config, progress_callback=_osm_progress)
+            _bar.empty()
+            _status.empty()
+        else:
+            spatial_strategy = ALL_SPATIAL_METHODS[selected_method](config)
         temporal_strategy = (
             ALL_TEMPORAL_METHODS[
                 st.session_state.get("selected_temporal_method", None)
@@ -240,6 +257,72 @@ def generate_trajectory(config: Config) -> None:
     trajectory = generator.generate_trajectory(id)
 
     st.session_state["current_trajectory"] = trajectory
+
+
+def plot_osm_trajectory() -> None:
+    """Show an OSM trajectory on an interactive Leaflet map with PT hotspots."""
+    import folium
+    from streamlit_folium import st_folium
+
+    trajectory = st.session_state["current_trajectory"]
+    generator = st.session_state["current_generator"]
+    strategy = generator.spatial_strategy
+
+    # Trajectory coords are (lon, lat) — Folium needs [lat, lon]
+    coords = list(trajectory.ls.coords)
+    traj_locations = [[c[1], c[0]] for c in coords]
+
+    # Centre map on the trajectory
+    center_lat = sum(c[0] for c in traj_locations) / len(traj_locations)
+    center_lon = sum(c[1] for c in traj_locations) / len(traj_locations)
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
+
+    # PT hotspot markers — red, small
+    G = strategy._G
+    for node_id in strategy._hotspots:
+        nd = G.nodes[node_id]
+        folium.CircleMarker(
+            location=[nd["y"], nd["x"]],
+            radius=5,
+            color="red",
+            fill=True,
+            fill_opacity=0.7,
+            tooltip=f"PT hotspot {node_id}",
+        ).add_to(m)
+
+    # Trajectory polyline — blue
+    folium.PolyLine(
+        locations=traj_locations,
+        color="blue",
+        weight=4,
+        opacity=0.85,
+        tooltip=f"Trajectory {trajectory.id}",
+    ).add_to(m)
+
+    # Start / end markers
+    folium.Marker(
+        location=traj_locations[0],
+        tooltip="Start",
+        icon=folium.Icon(color="green", icon="play"),
+    ).add_to(m)
+    folium.Marker(
+        location=traj_locations[-1],
+        tooltip="End",
+        icon=folium.Icon(color="darkred", icon="stop"),
+    ).add_to(m)
+
+    columns = st.columns(3)
+    with columns[1]:
+        st_folium(m, height=500, use_container_width=True)
+        with st.expander("Show Trajectory Details"):
+            st.write(f"Trajectory ID: {trajectory.id}")
+            st.write(f"Number of points: {len(coords)}")
+            st.write(f"PT hotspots in area: {len(strategy._hotspots)}")
+            df_points = pd.DataFrame(coords, columns=["lon", "lat"])
+            if trajectory.t is not None:
+                df_points["time"] = trajectory.t
+            st.dataframe(df_points, width="stretch")
 
 
 def plot_trajectory(title: str | None = None) -> None:
