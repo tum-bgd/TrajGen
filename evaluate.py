@@ -410,7 +410,6 @@ def main() -> None:  # noqa: C901  (complexity is inherent in the benchmark loop
                 _prime_cfg = make_config(*BBOX_OSM)
                 _prime_cfg.osm_max_hops = 50
                 _prime_cfg.osm_max_meters = 5000.0
-                _prime_cfg.osm_jitter_std_m = 5.0
                 OsmSamplingStrategy(_prime_cfg)
                 osm_cache_primed = True
                 print("done\n")
@@ -458,7 +457,6 @@ def main() -> None:  # noqa: C901  (complexity is inherent in the benchmark loop
                     if is_osm:
                         cfg.osm_max_hops = 50
                         cfg.osm_max_meters = 5000.0
-                        cfg.osm_jitter_std_m = 5.0
                         spatial = OsmSamplingStrategy(cfg)
                         temporal = tf(cfg)
                         return (

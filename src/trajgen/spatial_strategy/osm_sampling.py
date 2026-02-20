@@ -54,11 +54,11 @@ class OsmSamplingStrategy:
             if path is None:
                 continue
 
-            xs_m, ys_m = self._path_to_jittered_points(self._Gp, path)
+            xs_m, ys_m = self._path_to_points(self._Gp, path)
             if len(xs_m) < 5:
                 continue
 
-            # Reproject jittered metric coords back to lon/lat
+            # Reproject metric coords back to lon/lat
             line_m = LineString([Point(x, y) for x, y in zip(xs_m, ys_m)])
             line_ll, _ = ox.projection.project_geometry(
                 line_m, crs=self._Gp.graph["crs"], to_crs="EPSG:4326"
@@ -154,41 +154,14 @@ class OsmSamplingStrategy:
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             return None
 
-    def _jitter_point_along_segment(
-        self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
-        std: float,
-    ) -> tuple[float, float]:
-        t = self._rng.random()
-        x = x1 + t * (x2 - x1)
-        y = y1 + t * (y2 - y1)
-
-        dx = x2 - x1
-        dy = y2 - y1
-        norm = np.hypot(dx, dy)
-        if norm == 0.0:
-            return x, y
-
-        nxp = -dy / norm
-        nyp = dx / norm
-
-        offset = self._rng.gauss(0.0, std)
-        xj = x + offset * nxp
-        yj = y + offset * nyp
-        return xj, yj
-
-    def _path_to_jittered_points(
+    def _path_to_points(
         self,
         Gp: nx.MultiDiGraph,
         path: list[int],
     ) -> tuple[np.ndarray, np.ndarray]:
+        """Collect the exact OSM road-geometry vertices along the path."""
         xs: list[float] = []
         ys: list[float] = []
-
-        jitter_std = self.config.osm_jitter_std_m
 
         for u, v in zip(path[:-1], path[1:]):
             data = min(
@@ -204,17 +177,15 @@ class OsmSamplingStrategy:
             else:
                 coords = list(geom.coords)
 
-            for (x1, y1), (x2, y2) in zip(coords[:-1], coords[1:]):
-                n_samples = max(
-                    2,
-                    int(np.hypot(x2 - x1, y2 - y1) / 30.0),
-                )
-                for _ in range(n_samples):
-                    xj, yj = self._jitter_point_along_segment(
-                        x1, y1, x2, y2, jitter_std
-                    )
-                    xs.append(xj)
-                    ys.append(yj)
+            # Exclude the last vertex of each edge to avoid duplicating
+            # the junction node shared with the next edge.
+            xs.extend(c[0] for c in coords[:-1])
+            ys.extend(c[1] for c in coords[:-1])
+
+        # Append the final endpoint.
+        last = path[-1]
+        xs.append(Gp.nodes[last]["x"])
+        ys.append(Gp.nodes[last]["y"])
 
         return np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
 
@@ -264,14 +235,6 @@ class OsmSamplingStrategy:
                 "default_mode": "fixed for dataset",
                 "description": "Retry attempts per trajectory.",
                 "optional": True,
-            },
-            "get_next_osm_jitter_std_m": {
-                "short_name": "Jitter Std (m)",
-                "type": "get_float_function",
-                "default": 5.0,
-                "default_mode": "fixed for dataset",
-                "description": "Standard deviation (metres) of perpendicular jitter applied to path nodes.",
-                "optional": False,
             },
             # Bbox — same keys as bbox_requirements but with lat/lon defaults and labels
             "get_next_x_min": {
