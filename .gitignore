@@ -211,3 +211,4 @@ results/
 tmp/
 tests/tmp
 cache/
+logs/
