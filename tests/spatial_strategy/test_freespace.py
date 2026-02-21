@@ -11,16 +11,17 @@ import random
 class TestObstacle:
     def test_obstacle_creation(self):
         polygon = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-        obstacle = Obstacle(polygon=polygon, id=1)
+        obstacle = Obstacle(polygon=polygon, id=1, buffered=polygon.buffer(0.1))
 
         assert obstacle.polygon == polygon
         assert obstacle.id == 1
+        assert obstacle.buffered == polygon.buffer(0.1)
 
 
 class TestFreespaceStrategy:
     @pytest.fixture
     def mock_config(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.x_min = 0.0
         config.y_min = 0.0
         config.x_max = 1.0
@@ -50,6 +51,7 @@ class TestFreespaceStrategy:
         config.get_next_length.return_value = 10
         config.get_start_point.return_value = Point(0.0, 0.0)
         config.get_end_point.return_value = Point(1.0, 1.0)
+        config.get_next_length.return_value = 10
         return config
 
     @pytest.fixture

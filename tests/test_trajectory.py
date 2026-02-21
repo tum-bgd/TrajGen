@@ -1,4 +1,4 @@
-import pytest # noqa F401
+import pytest  # noqa F401
 from shapely.geometry import LineString
 from trajgen.trajectory import Trajectory, TrajectoryDataset
 from trajgen.config import Config
@@ -48,7 +48,7 @@ class TestTrajectory:
 
 class TestTrajectoryDataset:
     def test_dataset_creation(self):
-        config = Config()
+        config = Config({})
         trajectories = []
         dataset = TrajectoryDataset(generator_config=config, trajectories=trajectories)
 
@@ -56,7 +56,7 @@ class TestTrajectoryDataset:
         assert dataset.trajectories == trajectories
 
     def test_dataset_len(self):
-        config = Config()
+        config = Config({})
         coords1 = [(0, 0), (1, 1)]
         coords2 = [(2, 2), (3, 3)]
         traj1 = Trajectory(id=1, ls=LineString(coords1))
@@ -67,7 +67,7 @@ class TestTrajectoryDataset:
         assert len(dataset) == 2
 
     def test_dataset_getitem(self):
-        config = Config()
+        config = Config({})
         coords = [(0, 0), (1, 1)]
         traj = Trajectory(id=1, ls=LineString(coords))
         trajectories = [traj]
@@ -76,7 +76,7 @@ class TestTrajectoryDataset:
         assert dataset[0] == traj
 
     def test_dataset_iter(self):
-        config = Config()
+        config = Config({})
         coords1 = [(0, 0), (1, 1)]
         coords2 = [(2, 2), (3, 3)]
         traj1 = Trajectory(id=1, ls=LineString(coords1))
@@ -88,7 +88,7 @@ class TestTrajectoryDataset:
         assert result == trajectories
 
     def test_dataset_repr(self):
-        config = Config()
+        config = Config({})
         coords = [(0, 0), (1, 1)]
         traj = Trajectory(id=1, ls=LineString(coords))
         trajectories = [traj]
@@ -98,7 +98,7 @@ class TestTrajectoryDataset:
         assert repr(dataset) == expected
 
     def test_dataset_save_and_load(self):
-        config = Config()
+        config = Config({})
         coords1 = [(0, 0), (1, 1)]
         coords2 = [(2, 2), (3, 3)]
         traj1 = Trajectory(id=1, ls=LineString(coords1))

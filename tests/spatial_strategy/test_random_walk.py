@@ -10,7 +10,7 @@ from trajgen.point_generator import PointGenerator
 class TestRandomWalkStrategy:
 
     def test_init_stores_parameters(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.seed = 123
         point_generator = Mock(spec=PointGenerator)
         config.point_generator = point_generator
@@ -21,14 +21,14 @@ class TestRandomWalkStrategy:
         assert strategy.point_generator == point_generator
 
     def test_init_default_seed(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.seed = 42
         strategy = RandomWalkStrategy(config=config)
 
         assert strategy.seed == 42
 
     def test_call_returns_trajectory_with_correct_id(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.num_points = 5
 
         # Create real points instead of mocks to avoid attribution errors in shapely
@@ -43,6 +43,8 @@ class TestRandomWalkStrategy:
         # Add required methods for config
         config.get_next_length.return_value = 5
         config.get_start_point.return_value = None
+        config.get_end_point.return_value = None
+        config.get_next_closed_loop.return_value = False
 
         strategy = RandomWalkStrategy(config=config)
         result = strategy(id=42)
@@ -51,7 +53,7 @@ class TestRandomWalkStrategy:
         assert result.id == 42
 
     def test_call_uses_config_num_points(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.num_points = 10
 
         from shapely.geometry import Point
@@ -61,6 +63,8 @@ class TestRandomWalkStrategy:
         point_generator.return_value = mock_points
         config.point_generator = point_generator
         config.get_start_point.return_value = None
+        config.get_end_point.return_value = None
+        config.get_next_closed_loop.return_value = False
         config.get_next_length.side_effect = [10, 20, 30]
         strategy = RandomWalkStrategy(config=config)
         strategy(id=1)
@@ -69,10 +73,11 @@ class TestRandomWalkStrategy:
         config.point_generator.assert_called_once_with(10)
 
     def test_call_creates_linestring_from_points(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.get_next_length.return_value = 3
-        config.closed_loop = False
         config.get_start_point.return_value = None
+        config.get_end_point.return_value = None
+        config.get_next_closed_loop.return_value = False
 
         from shapely.geometry import Point
 
@@ -89,9 +94,11 @@ class TestRandomWalkStrategy:
         assert list(result.ls.coords) == expected_coords
 
     def test_call_with_single_point(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.get_next_length.return_value = 1
         config.get_start_point.return_value = None
+        config.get_end_point.return_value = None
+        config.get_next_closed_loop.return_value = False
 
         from shapely.geometry import Point
 
@@ -110,9 +117,11 @@ class TestRandomWalkStrategy:
         assert len(result.ls.coords) <= 1
 
     def test_call_with_zero_points(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.get_next_length.return_value = 0
         config.get_start_point.return_value = None
+        config.get_end_point.return_value = None
+        config.get_next_closed_loop.return_value = False
 
         point_generator = Mock(spec=PointGenerator)
         point_generator.return_value = []
@@ -126,9 +135,11 @@ class TestRandomWalkStrategy:
         assert len(result.ls.coords) == 0
 
     def test_call_different_ids_produce_different_trajectories(self):
-        config = Mock(spec=Config)
+        config = Mock()
         config.get_next_length.return_value = 3
         config.get_start_point.return_value = None
+        config.get_end_point.return_value = None
+        config.get_next_closed_loop.return_value = False
 
         from shapely.geometry import Point
 

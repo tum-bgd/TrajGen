@@ -38,15 +38,15 @@ class TestTrajectoryGenerator:
         assert generator.config == mock_config
         assert generator.spatial_strategy == mock_strategy
 
-    def test_generate_trajectory_calls_spatial_strategy(self, mock_trajectory_generator):
+    def test_generate_trajectory_calls_spatial_strategy(
+        self, mock_trajectory_generator
+    ):
         mock_trajectory = Mock(spec=Trajectory)
         mock_trajectory_generator.spatial_strategy.return_value = mock_trajectory
 
         result = mock_trajectory_generator.generate_trajectory(42)
 
-        mock_trajectory_generator.spatial_strategy.assert_called_once_with(
-            42, mock_trajectory_generator.config
-        )
+        mock_trajectory_generator.spatial_strategy.assert_called_once_with(42)
         assert result == mock_trajectory
 
 

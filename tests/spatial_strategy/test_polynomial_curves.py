@@ -12,7 +12,7 @@ class TestPolynomialCurvesStrategy:
 
     def setup_method(self):
         """Setup common mocks."""
-        self.config = Mock(spec=Config)
+        self.config = Mock()
         self.config.num_control_points = 5
         self.config.get_next_closed_loop.return_value = False
         self.config.point_generator = Mock(PointGenerator)

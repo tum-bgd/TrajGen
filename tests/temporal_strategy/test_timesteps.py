@@ -24,10 +24,10 @@ class TestFixedStepsTemporalStrategy(unittest.TestCase):
         self.trajectory.ls.coords = [Mock()] * length
         tmin = 10
         time_step = 2
-        expected_times = list(range(tmin, length * time_step, time_step))
+        expected_times = [tmin + i * time_step for i in range(length)]
 
         self.config.get_next_tmin.return_value = tmin
-        self.strategy.time_step = time_step
+        self.config.get_next_time_step.return_value = time_step
 
         result = self.strategy(self.trajectory)
 
