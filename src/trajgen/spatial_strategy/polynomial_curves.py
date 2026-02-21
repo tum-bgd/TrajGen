@@ -21,7 +21,7 @@ class PolynomialCurvesStrategy:
         control_points = self.config.point_generator(self.config.num_control_points)
 
         # First and last control point = SAME (closure)
-        if self.config.closed_loop:
+        if self.config.get_next_closed_loop():
             control_points[-1] = control_points[0]
 
         # Parameter t for control points (roughly uniform)
