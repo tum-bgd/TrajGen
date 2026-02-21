@@ -106,9 +106,8 @@ class TestFreespaceStrategy:
 
     def test_plan_path_around_obstacles_with_obstacles(self, strategy):
         # Create obstacles that don't block the path
-        obstacle1 = Obstacle(
-            Polygon([(0.8, 0.8), (0.9, 0.8), (0.9, 0.9), (0.8, 0.9)]), 0
-        )
+        poly1 = Polygon([(0.8, 0.8), (0.9, 0.8), (0.9, 0.9), (0.8, 0.9)])
+        obstacle1 = Obstacle(polygon=poly1, buffered=poly1.buffer(0.1), id=0)
         strategy.obstacles = [obstacle1]
 
         rng = random.Random(strategy.config.seed)
@@ -189,7 +188,13 @@ class TestFreespaceStrategy:
 
         # Setup strategy with obstacles
         strategy.obstacles = [
-            Obstacle(Polygon([(0.1, 0.1), (0.2, 0.1), (0.2, 0.2), (0.1, 0.2)]), 0)
+            Obstacle(
+                polygon=Polygon([(0.1, 0.1), (0.2, 0.1), (0.2, 0.2), (0.1, 0.2)]),
+                buffered=Polygon(
+                    [(0.1, 0.1), (0.2, 0.1), (0.2, 0.2), (0.1, 0.2)]
+                ).buffer(0.1),
+                id=0,
+            )
         ]
         strategy.seed = 42
 
