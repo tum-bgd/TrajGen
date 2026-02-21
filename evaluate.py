@@ -56,7 +56,7 @@ from trajgen.temporal_strategy.timesteps import (  # noqa: E402
 # --------------------------------------------------------------------------- #
 NUM_TRAJECTORIES: int = 1_000
 NUM_POINTS: int = 100
-NUM_TIMING_RUNS: int = 25
+NUM_TIMING_RUNS: int = 1
 SEED: int = 42
 _ROOT = "./"
 # Bounding boxes: standard unit square and Munich OSM area
@@ -88,30 +88,30 @@ def _temporal_constant_time(c: Config):
 
 
 def _temporal_constant_velocity(c: Config):
-    c.velocity_mode = "fixed for dataset"
-    c.velocity = 1.0
+    c.get_next_velocity_mode = "fixed for dataset"
+    c.get_next_velocity = 1.0
     return VelocityTemporalStrategy(c)
 
 
 def _temporal_velocity_from_dist(c: Config):
-    c.velocity_mode = "fixed for trajectory"
-    c.velocity_distribution = "uniform"
-    c.velocity_min = 0.5
-    c.velocity_max = 2.0
+    c.get_next_velocity_mode = "fixed for trajectory"
+    c.get_next_velocity_distribution = "uniform"
+    c.get_next_velocity_min = 0.5
+    c.get_next_velocity_max = 2.0
     return VelocityTemporalStrategy(c)
 
 
 def _temporal_constant_acceleration(c: Config):
-    c.acceleration_mode = "fixed for dataset"
-    c.acceleration = 0.1
+    c.get_next_acceleration_mode = "fixed for dataset"
+    c.get_next_acceleration = 0.1
     return AccelerationTemporalStrategy(c)
 
 
 def _temporal_acceleration_from_dist(c: Config):
-    c.acceleration_mode = "fixed for trajectory"
-    c.acceleration_distribution = "uniform"
-    c.acceleration_min = 0.0
-    c.acceleration_max = 1.0
+    c.get_next_acceleration_mode = "fixed for trajectory"
+    c.get_next_acceleration_distribution = "uniform"
+    c.get_next_acceleration_min = 0.0
+    c.get_next_acceleration_max = 1.0
     return AccelerationTemporalStrategy(c)
 
 
@@ -170,22 +170,22 @@ def make_config(
     seed: int = SEED,
 ) -> Config:
     """Return a fresh Config for the given bounding box."""
-    return Config(
-        seed=seed,
-        length_mode="fixed for dataset",
-        length=NUM_POINTS,
-        x_min=x_min,
-        x_max=x_max,
-        y_min=y_min,
-        y_max=y_max,
-        velocity_mode="fixed for dataset",
-        velocity=1.0,
-        acceleration_mode="fixed for dataset",
-        acceleration=0.1,
-        start_time_mode="fixed for dataset",
-        start_time=0.0,
-        time_step=1.0,
-    )
+    cfg = Config({}, seed=seed)
+    cfg.x_min = x_min
+    cfg.x_max = x_max
+    cfg.y_min = y_min
+    cfg.y_max = y_max
+    cfg.get_next_length = NUM_POINTS
+    cfg.get_next_length_mode = "fixed for dataset"
+    cfg.get_next_closed_loop = False
+    cfg.get_next_closed_loop_mode = "fixed for dataset"
+    cfg.get_next_velocity = 1.0
+    cfg.get_next_velocity_mode = "fixed for dataset"
+    cfg.get_next_acceleration = 0.1
+    cfg.get_next_acceleration_mode = "fixed for dataset"
+    cfg.tmin = 0.0
+    cfg.time_step = 1.0
+    return cfg
 
 
 def attach_point_generator(config: Config) -> None:
@@ -210,7 +210,7 @@ def generate_batch(generator: TrajectoryGenerator, config: Config) -> list[Traje
         traj_seed = base_seed + i
         config.rng = random.Random(traj_seed)
         # Reseed inner point generator if present
-        pg = config.point_generator
+        pg = getattr(config, "point_generator", None)
         while pg is not None:
             if hasattr(pg, "rng"):
                 pg.rng = random.Random(traj_seed)
@@ -469,6 +469,7 @@ def main() -> None:  # noqa: C901  (complexity is inherent in the benchmark loop
                         )
 
                     if is_physics:
+                        attach_point_generator(cfg)
                         combined = PhysicsInformedCombinedStrategy(cfg)
                         return (
                             TrajectoryGenerator(
@@ -483,17 +484,21 @@ def main() -> None:  # noqa: C901  (complexity is inherent in the benchmark loop
                     if sname == "Random Walk":
                         spatial = RandomWalkStrategy(cfg)
                     elif sname == "Equal Point Distribution":
+                        cfg.grid_rows = 5
+                        cfg.grid_cols = 5
                         spatial = EqualDistributionStrategy(cfg)
                         spatial.reset_for_dataset(NUM_TRAJECTORIES)
                     elif sname == "Freespace Trajectories":
                         # FreespaceStrategy reads start/end from config; set
                         # them explicitly (defaults are None → AttributeError).
-                        cfg.start_point_mode = "fixed for dataset"
-                        cfg.start_point_x = cfg.x_min
-                        cfg.start_point_y = cfg.y_min
-                        cfg.end_point_mode = "fixed for dataset"
-                        cfg.end_point_x = cfg.x_max
-                        cfg.end_point_y = cfg.y_max
+                        cfg.get_start_point_mode = "fixed for dataset"
+                        cfg.get_start_point_x = cfg.x_min
+                        cfg.get_start_point_y = cfg.y_min
+                        cfg.get_end_point_mode = "fixed for dataset"
+                        cfg.get_end_point_x = cfg.x_max
+                        cfg.get_end_point_y = cfg.y_max
+                        cfg.num_obstacles = 5
+                        cfg.deviation_factor = 0.15
                         spatial = FreespaceStrategy(cfg)
                     else:
                         raise ValueError(f"Unknown spatial strategy: {sname!r}")
