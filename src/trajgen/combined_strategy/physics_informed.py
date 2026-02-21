@@ -100,7 +100,7 @@ class PhysicsInformedCombinedStrategy(CombinedStrategy):
             timestamps.append(current_time)
 
             # Stop if ball comes to rest (very low velocity)
-            if abs(vx) < 0.1 and abs(vy) < 0.1 and y <= y_min + 1.0:
+            if abs(vx) < 0.1 and abs(vy) < 0.1 and y <= y_min + (y_max - y_min) * 0.01:
                 break
 
         # Create LineString from trajectory points
@@ -248,7 +248,7 @@ class PhysicsInformedCombinedStrategy(CombinedStrategy):
             "simulation_time": {
                 "short_name": "Simulation Time",
                 "type": "get_float_function",
-                "default": 10.0,
+                "default": 1.0,
                 "description": "Total time (in seconds) to simulate the trajectory.",
                 "optional": True,
             },
@@ -267,11 +267,12 @@ class PhysicsInformedCombinedStrategy(CombinedStrategy):
                 "optional": True,
             },
             "get_next_velocity": {
-                "short_name": "Initial Velocity Getter",
-                "type": "get_point_function",
-                "default": lambda: random.uniform(5.0, 15.0),
-                "description": "Optional function to determine initial velocity of the ball.",
-                "optional": False,
+                "short_name": "Initial Velocity",
+                "type": "get_float_function",
+                "default": 8.0,
+                "default_mode": "fixed for dataset",
+                "description": "Initial speed applied to both vx and vy at the start of the simulation.",
+                "optional": True,
             },
             **bbox_requirements(spatial_dim),
         }
