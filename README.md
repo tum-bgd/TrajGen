@@ -41,6 +41,10 @@ These are available either for
 
 If only the backend should be used, the necessary parameters have to be set in a `Config` class as defined in [./src/trajgen/config.py]()
 
+The 5 main spatial strategies proposed are visualized in an example eachhere:
+[5 strategies supported for trajectory generation](assets/trajectory_methods_20260221_061734.pdf)
+
+
 # Frontend
 The frontend guides the user through a six-step process to generate the trajectory dataset:
 
