@@ -13,8 +13,13 @@ import random
 def mock_config():
     config = Mock(spec=Config)
     config.seed = 42
-    config.osm_pbf_path = "/path/to/test.osm.pbf"
     config.osm_max_attempts_per_traj = 5
+    config.osm_max_hops = 20
+    config.osm_max_meters = 2000
+    config.x_min = 11.54
+    config.x_max = 11.62
+    config.y_min = 48.12
+    config.y_max = 48.17
     return config
 
 
@@ -43,31 +48,17 @@ def mock_projected_graph():
 
 class TestOsmOnStreetNetworkStrategy:
 
-    @patch("trajgen.spatial_strategy.osm_sampling.os.path.exists")
-    @patch("trajgen.spatial_strategy.osm_sampling.OSM")
+    @patch("trajgen.spatial_strategy.osm_sampling.ox.graph_from_bbox")
     @patch("trajgen.spatial_strategy.osm_sampling.ox.project_graph")
     def test_init_with_valid_config(
         self,
         mock_project_graph,
-        mock_osm_class,
-        mock_exists,
+        mock_graph_from_bbox,
         mock_config,
         mock_graph,
         mock_projected_graph,
     ):
-        mock_exists.return_value = True
-        mock_osm = Mock()
-        # Create mock dataframes for get_network return value (nodes_gdf, edges_gdf)
-        mock_nodes = Mock()
-        mock_edges = Mock()
-        mock_nodes.__getitem__ = Mock(return_value=mock_nodes)  # For indexing operations
-        mock_edges.__getitem__ = Mock(return_value=mock_edges)  # For indexing operations
-        mock_osm.get_network.return_value = (mock_nodes, mock_edges)
-        mock_osm.to_graph.return_value = mock_graph
-        mock_osm.get_pois.return_value = Mock()
-        mock_osm.get_pois.return_value.geometry.centroid = [Point(0.5, 0.5)]
-        mock_osm._rng = random.Random(mock_config.seed)
-        mock_osm_class.return_value = mock_osm
+        mock_graph_from_bbox.return_value = mock_graph
         mock_project_graph.return_value = mock_projected_graph
 
         with patch.object(OsmSamplingStrategy, "_get_pt_hotspots", return_value=[1, 2]):
@@ -78,12 +69,22 @@ class TestOsmOnStreetNetworkStrategy:
         assert strategy._Gp == mock_projected_graph
         assert strategy._hotspots == [1, 2]
 
-    @patch("trajgen.spatial_strategy.osm_sampling.os.path.exists")
-    def test_init_missing_pbf_file(self, mock_exists, mock_config):
-        mock_exists.return_value = False
+    @patch("trajgen.spatial_strategy.osm_sampling.ox.graph_from_bbox")
+    @patch("trajgen.spatial_strategy.osm_sampling.ox.project_graph")
+    def test_init_no_hotspots_raises(
+        self,
+        mock_project_graph,
+        mock_graph_from_bbox,
+        mock_config,
+        mock_graph,
+        mock_projected_graph,
+    ):
+        mock_graph_from_bbox.return_value = mock_graph
+        mock_project_graph.return_value = mock_projected_graph
 
-        with pytest.raises(FileNotFoundError, match="OSM PBF file not found"):
-            OsmSamplingStrategy(mock_config)
+        with patch.object(OsmSamplingStrategy, "_get_pt_hotspots", return_value=[]):
+            with pytest.raises(RuntimeError, match="No public transport hotspots"):
+                OsmSamplingStrategy(mock_config)
 
     def test_normalize_xy_normal_case(self):
         xs = np.array([1.0, 2.0, 3.0])
@@ -128,11 +129,7 @@ class TestOsmOnStreetNetworkStrategy:
         strategy = OsmSamplingStrategy.__new__(OsmSamplingStrategy)
         strategy.config = mock_config
         strategy._rng = Mock()
-        strategy._rng.choice.side_effect = [
-            1,
-            1,
-            2,
-        ]  # First t same as s, then different
+        strategy._rng.choice.side_effect = [1, 1, 2]
 
         hotspots = [1, 2, 3]
         mock_graph = Mock()
@@ -148,14 +145,14 @@ class TestOsmOnStreetNetworkStrategy:
         mock_config.osm_max_hops = 20
         mock_config.osm_max_meters = 2000
         strategy.config = mock_config
-        strategy.max_hops = 10
-        strategy.max_meters = 1000
 
         with patch(
-            "trajgen.spatial_strategy.osm_sampling.nx.shortest_path", return_value=[1, 2]
+            "trajgen.spatial_strategy.osm_sampling.nx.shortest_path",
+            return_value=[1, 2],
         ):
             with patch(
-                "trajgen.spatial_strategy.osm_sampling.nx.path_weight", return_value=150.0
+                "trajgen.spatial_strategy.osm_sampling.nx.path_weight",
+                return_value=150.0,
             ):
                 path = strategy._shortest_path_with_limits(mock_graph, 1, 2)
 
@@ -166,14 +163,14 @@ class TestOsmOnStreetNetworkStrategy:
         mock_config.osm_max_hops = 5
         mock_config.osm_max_meters = 50
         strategy.config = mock_config
-        strategy.max_hops = 10
-        strategy.max_meters = 100
 
         with patch(
-            "trajgen.spatial_strategy.osm_sampling.nx.shortest_path", return_value=[1, 2]
+            "trajgen.spatial_strategy.osm_sampling.nx.shortest_path",
+            return_value=[1, 2],
         ):
             with patch(
-                "trajgen.spatial_strategy.osm_sampling.nx.path_weight", return_value=150.0
+                "trajgen.spatial_strategy.osm_sampling.nx.path_weight",
+                return_value=150.0,
             ):
                 path = strategy._shortest_path_with_limits(mock_graph, 1, 2)
 
@@ -182,8 +179,6 @@ class TestOsmOnStreetNetworkStrategy:
     def test_shortest_path_with_limits_no_path(self, mock_config, mock_graph):
         strategy = OsmSamplingStrategy.__new__(OsmSamplingStrategy)
         strategy.config = mock_config
-        strategy.max_hops = 10
-        strategy.max_meters = 1000
 
         with patch(
             "trajgen.spatial_strategy.osm_sampling.nx.shortest_path",
@@ -193,30 +188,6 @@ class TestOsmOnStreetNetworkStrategy:
 
         assert path is None
 
-    def test_jitter_point_along_segment(self, mock_config):
-        strategy = OsmSamplingStrategy.__new__(OsmSamplingStrategy)
-        strategy.config = mock_config
-        strategy._rng = Mock()
-        strategy._rng.random.return_value = 0.5
-        strategy._rng.normal.return_value = 10.0
-
-        xj, yj = strategy._jitter_point_along_segment(0.0, 0.0, 100.0, 0.0, 5.0)
-
-        # Point should be at middle of segment (50, 0) plus perpendicular offset
-        assert xj == 50.0  # No perpendicular component in x
-        assert yj == 10.0  # Perpendicular offset in y
-
-    def test_jitter_point_along_segment_zero_length(self, mock_config):
-        strategy = OsmSamplingStrategy.__new__(OsmSamplingStrategy)
-        strategy.config = mock_config
-        strategy._rng = Mock()
-        strategy._rng.random.return_value = 0.5
-
-        xj, yj = strategy._jitter_point_along_segment(5.0, 5.0, 5.0, 5.0, 5.0)
-
-        assert xj == 5.0
-        assert yj == 5.0
-
     def test_call_success(self, mock_config):
         strategy = OsmSamplingStrategy.__new__(OsmSamplingStrategy)
         strategy.config = mock_config
@@ -225,29 +196,28 @@ class TestOsmOnStreetNetworkStrategy:
         strategy._Gp.graph = {"crs": "EPSG:32633"}
         strategy._hotspots = [1, 2, 3]
 
-        # Mock all the method calls
         strategy._sample_od_nodes = Mock(return_value=(1, 2))
         strategy._shortest_path_with_limits = Mock(return_value=[1, 2])
-        strategy._path_to_jittered_points = Mock(
+        strategy._path_to_points = Mock(
             return_value=(
                 np.array([100.0, 150.0, 200.0, 250.0, 300.0]),
                 np.array([100.0, 120.0, 140.0, 160.0, 180.0]),
             )
         )
 
-        with patch(
-            "trajgen.spatial_strategy.osm_sampling.ox.projection.project_geometry"
-        ) as mock_project:
-            mock_linestring = Mock()
-            mock_linestring.coords = [
-                (0.1, 0.2),
-                (0.3, 0.4),
-                (0.5, 0.6),
-                (0.7, 0.8),
-                (0.9, 1.0),
+        real_linestring = LineString(
+            [
+                (11.54, 48.12),
+                (11.56, 48.14),
+                (11.58, 48.15),
+                (11.60, 48.16),
+                (11.62, 48.17),
             ]
-            mock_project.return_value = (mock_linestring, None)
-
+        )
+        with patch(
+            "trajgen.spatial_strategy.osm_sampling.ox.projection.project_geometry",
+            return_value=(real_linestring, None),
+        ):
             trajectory = strategy(42)
 
         assert isinstance(trajectory, Trajectory)
@@ -273,7 +243,6 @@ class TestOsmOnStreetNetworkStrategy:
         strategy._Gp = Mock()
         strategy._hotspots = [1, 2, 3]
 
-        # Always return None for shortest path to force retries
         strategy._sample_od_nodes = Mock(return_value=(1, 2))
         strategy._shortest_path_with_limits = Mock(return_value=None)
 
@@ -282,38 +251,44 @@ class TestOsmOnStreetNetworkStrategy:
         ):
             strategy(42)
 
-    def test_path_to_jittered_points(self, mock_config, mock_projected_graph):
+    def test_path_to_points(self, mock_config, mock_projected_graph):
         strategy = OsmSamplingStrategy.__new__(OsmSamplingStrategy)
         strategy.config = mock_config
-        strategy.jitter_std = 5.0
-        strategy._jitter_point_along_segment = Mock(
-            side_effect=lambda x1, y1, x2, y2, std: (
-                x1 + (x2 - x1) / 2,
-                y1 + (y2 - y1) / 2,
-            )
-        )
 
-        path = [1, 2]
-        xs, ys = strategy._path_to_jittered_points(mock_projected_graph, path)
+        # path [1, 2, 3] on mock_projected_graph:
+        # edge (1,2): no geometry → coords [(100,100),(200,100)] → xs[:-1]=[100], ys=[100]
+        # edge (2,3): no geometry → coords [(200,100),(200,200)] → xs[:-1]=[200], ys=[100]
+        # final node 3: x=200, y=200
+        path = [1, 2, 3]
+        xs, ys = strategy._path_to_points(mock_projected_graph, path)
 
         assert len(xs) > 0
         assert len(ys) > 0
         assert len(xs) == len(ys)
+        assert xs[-1] == pytest.approx(200.0)
+        assert ys[-1] == pytest.approx(200.0)
 
+    @patch("trajgen.spatial_strategy.osm_sampling.ox.features_from_bbox")
     @patch("trajgen.spatial_strategy.osm_sampling.ox.distance.nearest_nodes")
-    def test_get_pt_hotspots(self, mock_nearest_nodes, mock_config):
+    def test_get_pt_hotspots(
+        self,
+        mock_nearest_nodes,
+        mock_features_from_bbox,
+        mock_config,
+        mock_projected_graph,
+    ):
         strategy = OsmSamplingStrategy.__new__(OsmSamplingStrategy)
         strategy.config = mock_config
-        strategy.pbf_path = "/path/to/test.osm.pbf"
 
-        mock_osm = Mock()
+        mock_pois_proj = Mock()
+        mock_pois_proj.geometry.centroid = [Point(100.0, 100.0), Point(200.0, 200.0)]
         mock_pois = Mock()
-        mock_pois.geometry.centroid = [Point(0.5, 0.5), Point(1.5, 1.5)]
-        mock_osm.get_pois.return_value = mock_pois
+        mock_pois.to_crs.return_value = mock_pois_proj
+        mock_features_from_bbox.return_value = mock_pois
         mock_nearest_nodes.side_effect = [1, 2]
 
-        with patch("trajgen.spatial_strategy.osm_sampling.OSM", return_value=mock_osm):
-            hotspots = strategy._get_pt_hotspots(Mock())
+        bbox = (11.54, 48.12, 11.62, 48.17)
+        hotspots = strategy._get_pt_hotspots(mock_projected_graph, bbox)
 
         assert hotspots == [1, 2]
         assert mock_nearest_nodes.call_count == 2
