@@ -56,7 +56,7 @@ from trajgen.temporal_strategy.timesteps import (  # noqa: E402
 # --------------------------------------------------------------------------- #
 NUM_TRAJECTORIES: int = 1_000
 NUM_POINTS: int = 100
-NUM_TIMING_RUNS: int = 1
+NUM_TIMING_RUNS: int = 25
 SEED: int = 42
 _ROOT = "./"
 # Bounding boxes: standard unit square and Munich OSM area
@@ -410,6 +410,7 @@ def main() -> None:  # noqa: C901  (complexity is inherent in the benchmark loop
                 _prime_cfg = make_config(*BBOX_OSM)
                 _prime_cfg.osm_max_hops = 50
                 _prime_cfg.osm_max_meters = 5000.0
+                _prime_cfg.osm_max_attempts_per_traj = 10
                 OsmSamplingStrategy(_prime_cfg)
                 osm_cache_primed = True
                 print("done\n")
@@ -457,6 +458,7 @@ def main() -> None:  # noqa: C901  (complexity is inherent in the benchmark loop
                     if is_osm:
                         cfg.osm_max_hops = 50
                         cfg.osm_max_meters = 5000.0
+                        cfg.osm_max_attempts_per_traj = 10
                         spatial = OsmSamplingStrategy(cfg)
                         temporal = tf(cfg)
                         return (

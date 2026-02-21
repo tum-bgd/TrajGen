@@ -138,7 +138,7 @@ def _panel_random_walk(ax) -> None:
     spatial = RandomWalkStrategy(cfg)
     traj = TrajectoryGenerator(cfg, spatial).generate_trajectory(TRAJ_ID)
     _draw_trajectory(ax, traj)
-    _finish_ax(ax, "Random Walk", (-0.05, 1.05), (-0.05, 1.05))
+    _finish_ax(ax, "Constrained Random", (-0.05, 1.05), (-0.05, 1.05))
     return cfg
 
 
@@ -159,7 +159,7 @@ def _panel_equal_distribution(ax) -> None:
         ax.axvline(j / cols, color="#e5e7eb", linewidth=0.6, zorder=1)
 
     _draw_trajectory(ax, traj)
-    _finish_ax(ax, "Equal Distribution", (-0.02, 1.02), (-0.02, 1.02), grid=False)
+    _finish_ax(ax, "Environment Weighted", (-0.02, 1.02), (-0.02, 1.02), grid=False)
     return cfg
 
 
@@ -185,7 +185,7 @@ def _panel_freespace(ax) -> None:
         ax.plot(xo, yo, color=C_OBS_EDGE, linewidth=0.7, zorder=2)
 
     _draw_trajectory(ax, traj)
-    _finish_ax(ax, "Freespace", (-0.02, 1.02), (-0.02, 1.02))
+    _finish_ax(ax, "Constrained Freespace", (-0.02, 1.02), (-0.02, 1.02))
     return cfg
 
 
@@ -210,7 +210,7 @@ def _panel_physics(ax) -> None:
     ).generate_trajectory(PHYSICS_TRAJ_ID)
     print(traj)
     _draw_trajectory(ax, traj)
-    _finish_ax(ax, "Physics Based", (-0.05, 1.05), (-0.05, 1.05))
+    _finish_ax(ax, "Physics Informed", (-0.05, 1.05), (-0.05, 1.05))
     return cfg
 
 
@@ -247,7 +247,7 @@ def _panel_osm(ax) -> None:
         )
 
     _draw_trajectory(ax, traj, point_size=18)
-    _finish_ax(ax, "OSM Sampling", grid=False)
+    _finish_ax(ax, "Map Based", grid=False)
     ax.set_xlabel("lon", fontsize=6, labelpad=2)
     ax.set_ylabel("lat", fontsize=6, labelpad=2)
     ax.xaxis.set_major_locator(plt.MaxNLocator(4))
@@ -309,9 +309,9 @@ def _legend_handles():
 PANELS = [
     ("Constrained Random", _panel_random_walk),
     ("Environment Weighted", _panel_equal_distribution),
-    ("Physics Based", _panel_physics),
-    ("Freespace", _panel_freespace),
-    ("OSM Sampling", _panel_osm),
+    ("Physics Informed", _panel_physics),
+    ("Constrained Freespace", _panel_freespace),
+    ("Map Based", _panel_osm),
 ]
 
 

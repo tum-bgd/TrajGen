@@ -48,7 +48,7 @@ class OsmSamplingStrategy:
         # call order and independent of construction-time RNG state.
         self._rng = random.Random(self.config.seed + id)
 
-        for _attempt in range(self.config.osm_max_attempts_per_traj):
+        for _attempt in range(getattr(self.config, "osm_max_attempts_per_traj", 5)):
             s, t = self._sample_od_nodes(self._hotspots, self._G)
             path = self._shortest_path_with_limits(self._G, s, t)
             if path is None:
