@@ -1,14 +1,40 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from collections import defaultdict
 from trajgen.config import Config
 from trajgen.trajectory import Trajectory
 from trajgen.spatial_strategy import EqualDistributionStrategy
 
 
+def _C(seed=42, **kwargs):
+    """Build a Config for testing from keyword arguments."""
+    cfg = Config({}, seed=seed)
+    length = kwargs.pop("length", None)
+    length_min = kwargs.pop("length_min", None)
+    length_max = kwargs.pop("length_max", None)
+    for k, v in kwargs.items():
+        setattr(cfg, k, v)
+    if length is not None:
+        cfg.get_next_length = length
+        cfg.get_next_length_mode = "fixed for dataset"
+    elif length_min is not None or length_max is not None:
+        cfg.get_next_length_mode = "fixed for trajectory"
+        cfg.get_next_length_distribution = "uniform"
+        cfg.get_next_length_min = length_min if length_min is not None else 1
+        cfg.get_next_length_max = length_max if length_max is not None else 10
+    return cfg
+
+
 class TestEqualDistributionStrategy:
+    config = Mock()
+    config.grid_rows = 3
+    config.grid_cols = 3
+    config.seed = 42
+    config.length_min = 2
+    config.length_max = 4
+
     def test_init(self):
-        config = Config(grid_rows=5, grid_cols=5, length_min=3, length_max=10, seed=123)
+        config = _C(seed=123, grid_rows=5, grid_cols=5, length_min=3, length_max=10)
         strategy = EqualDistributionStrategy(config)
 
         assert strategy.config == config
@@ -20,11 +46,11 @@ class TestEqualDistributionStrategy:
         assert strategy._current_traj_idx == 0
 
     def test_compute_targets_and_lengths_basic(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=2, length_max=4)
-        strategy = EqualDistributionStrategy(config)
+
+        strategy = EqualDistributionStrategy(self.config)
 
         with (
-            patch.object(config, "get_next_length", side_effect=[3, 2, 4]),
+            patch.object(self.config, "get_next_length", side_effect=[3, 2, 4]),
             patch("random.sample", return_value=[(0, 0)]),
         ):
             strategy._compute_targets_and_lengths(3)
@@ -36,7 +62,7 @@ class TestEqualDistributionStrategy:
         assert strategy._traj_order == [2, 0, 1]  # sorted by length desc
 
     def test_compute_targets_and_lengths_equal_distribution(self):
-        config = Config(grid_rows=2, grid_cols=2, length=4)
+        config = _C(grid_rows=2, grid_cols=2, length=4)
         strategy = EqualDistributionStrategy(config)
 
         with (
@@ -50,7 +76,7 @@ class TestEqualDistributionStrategy:
             assert visits == 2
 
     def test_reset_for_dataset(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=2, length_max=5)
+        config = _C(grid_rows=3, grid_cols=3, length_min=2, length_max=5)
         strategy = EqualDistributionStrategy(config)
 
         # Add some data to clear
@@ -65,7 +91,7 @@ class TestEqualDistributionStrategy:
         mock_compute.assert_called_once_with(10)
 
     def test_find_cell_with_highest_deficit_single_max(self):
-        config = Config(grid_rows=2, grid_cols=2, length_min=1, length_max=1)
+        config = _C(grid_rows=2, grid_cols=2, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         strategy._target_visits = {(0, 0): 3, (0, 1): 2, (1, 0): 2, (1, 1): 1}
@@ -80,7 +106,7 @@ class TestEqualDistributionStrategy:
         mock_choice.assert_called_once_with([(0, 0), (1, 0)])
 
     def test_find_cell_with_highest_deficit_all_equal(self):
-        config = Config(grid_rows=2, grid_cols=2, length_min=1, length_max=1)
+        config = _C(grid_rows=2, grid_cols=2, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         strategy._target_visits = {(0, 0): 1, (0, 1): 1, (1, 0): 1, (1, 1): 1}
@@ -94,7 +120,7 @@ class TestEqualDistributionStrategy:
         mock_choice.assert_called_once_with([(0, 0), (0, 1), (1, 0), (1, 1)])
 
     def test_get_valid_neighbors_corner(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
+        config = _C(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         neighbors = strategy._get_valid_neighbors(0, 0)  # top-left corner
@@ -104,7 +130,7 @@ class TestEqualDistributionStrategy:
         assert set(neighbors) == set(expected)
 
     def test_get_valid_neighbors_center(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
+        config = _C(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         neighbors = strategy._get_valid_neighbors(1, 1)  # center
@@ -114,7 +140,7 @@ class TestEqualDistributionStrategy:
         assert set(neighbors) == set(expected)
 
     def test_get_valid_neighbors_edge(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
+        config = _C(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         neighbors = strategy._get_valid_neighbors(0, 1)  # top edge
@@ -124,7 +150,7 @@ class TestEqualDistributionStrategy:
         assert set(neighbors) == set(expected)
 
     def test_select_next_cell_by_deficit_high_deficit(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
+        config = _C(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         strategy._target_visits = {(0, 0): 1, (0, 1): 5, (1, 0): 1, (1, 1): 1}
@@ -141,7 +167,7 @@ class TestEqualDistributionStrategy:
         assert result == (0, 1)
 
     def test_select_next_cell_by_deficit_backtrack_penalty(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
+        config = _C(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         strategy._target_visits = {(0, 0): 2, (0, 1): 2, (1, 0): 2}
@@ -158,7 +184,7 @@ class TestEqualDistributionStrategy:
         assert result == (1, 0)
 
     def test_select_next_cell_by_deficit_no_weighted_choices(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
+        config = _C(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         with (
@@ -171,7 +197,7 @@ class TestEqualDistributionStrategy:
         mock_choice.assert_called_once_with([])
 
     def test_select_next_cell_by_deficit_zero_total_weight(self):
-        config = Config(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
+        config = _C(grid_rows=3, grid_cols=3, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         strategy._target_visits = {(0, 1): 0, (1, 0): 0}
@@ -191,7 +217,7 @@ class TestEqualDistributionStrategy:
         assert result == (1, 0)
 
     def test_call_generates_trajectory(self):
-        config = Config(grid_rows=2, grid_cols=2, length_min=3, length_max=3)
+        config = _C(grid_rows=2, grid_cols=2, length_min=3, length_max=3)
         strategy = EqualDistributionStrategy(config)
 
         # Setup state as if reset_for_dataset was called
@@ -219,7 +245,7 @@ class TestEqualDistributionStrategy:
         assert trajectory.ls.coords[2] == (0.25, 0.75)  # (1,0) -> (0.0, 0.5)
 
     def test_call_updates_visits(self):
-        config = Config(grid_rows=2, grid_cols=2, length_min=2, length_max=2)
+        config = _C(grid_rows=2, grid_cols=2, length_min=2, length_max=2)
         strategy = EqualDistributionStrategy(config)
 
         strategy._lengths = [2]
@@ -241,7 +267,7 @@ class TestEqualDistributionStrategy:
         assert strategy._current_traj_idx == 1
 
     def test_call_multiple_trajectories_ordering(self):
-        config = Config(grid_rows=2, grid_cols=2, length_min=1, length_max=3)
+        config = _C(grid_rows=2, grid_cols=2, length_min=1, length_max=3)
         strategy = EqualDistributionStrategy(config)
 
         # Setup for 3 trajectories with lengths [2, 1, 3], sorted order should be [2, 0, 1]
@@ -272,7 +298,7 @@ class TestEqualDistributionStrategy:
             assert strategy._current_traj_idx == 2
 
     def test_coordinate_conversion_scaling(self):
-        config = Config(grid_rows=4, grid_cols=5, length_min=1, length_max=1)
+        config = _C(grid_rows=4, grid_cols=5, length_min=1, length_max=1)
         strategy = EqualDistributionStrategy(config)
 
         strategy._lengths = [2]

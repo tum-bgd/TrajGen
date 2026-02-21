@@ -14,7 +14,7 @@ class TestPolynomialCurvesStrategy:
         """Setup common mocks."""
         self.config = Mock(spec=Config)
         self.config.num_control_points = 5
-        self.config.closed_loop = False
+        self.config.get_next_closed_loop.return_value = False
         self.config.point_generator = Mock(PointGenerator)
         self.config.get_next_length.return_value = 20
 
@@ -134,7 +134,7 @@ class TestPolynomialCurvesStrategy:
 
     def test_closed_loop_reuses_first_point(self):
         """Test closed_loop=True sets last control point = first."""
-        self.config.closed_loop = True
+        self.config.get_next_closed_loop.return_value = True
         strategy = PolynomialCurvesStrategy(self.config)
 
         strategy(1)
