@@ -5,7 +5,7 @@ from ..method_overview import (
     ALL_TEMPORAL_METHODS,
 )
 import streamlit as st
-from config import Config
+from trajgen.config import Config
 from trajgen.relevant_properties import Properties
 
 DEBUG = True

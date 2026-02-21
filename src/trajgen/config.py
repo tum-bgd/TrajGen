@@ -1,437 +1,508 @@
 import random
-from dataclasses import dataclass, field
-from typing import Optional, Tuple, Union, Callable
 
 from shapely.geometry import Point
-from .point_generator import PointGenerator
+from trajgen.relevant_properties import Properties
 
 
-@dataclass
 class Config:
-    # ------------------------------------------------------------------
-    # General Parameters
-    # ------------------------------------------------------------------
-    seed: int = 43
-    rng: random.Random = field(init=False)
-
-    def __post_init__(self):
-        self.rng = random.Random(self.seed)
-
-    # ------------------------------------------------------------------
-    # Dataset Parameters
-    # ------------------------------------------------------------------
-    num_trajectories: int = 10
-    spatial_dimension: str = "2D"  # "2D", "3D"
-    spatial_dim_type: str = "continuous"  # "continuous", "discrete"
-    temporal_dim_type: str = "continuous"  # "continuous", "discrete"
+    """Config class that provides a unified interface for trajectory generation
+    - ``get_next_value(field_name)`` – generic value retrieval that respects
+      the mode / distribution configured in the UI.
+    - Attribute access (``config.x_min``, ``config.seed``, …) for backward
+      compatibility with ``trajgen.config.Config``.
+    - Automatic ``get_*()`` method proxies so strategy code that calls e.g.
+      ``config.get_next_length()`` keeps working.
+    """
 
     # ------------------------------------------------------------------
-    # Bounding Box
+    # Construction
     # ------------------------------------------------------------------
-    x_min: float = 0.0
-    x_max: float = 1.0
-    y_min: float = 0.0
-    y_max: float = 1.0
-    z_min: float = 0.0
-    z_max: float = 1.0
-
-    # ------------------------------------------------------------------
-    # Strategy Selection
-    # ------------------------------------------------------------------
-    spatial_strategy: str = "equal_distribution"
-    resampling_strategy: Optional[str] = None
-    temporal_strategy: str = "fixed_timesteps"
+    def __init__(self, state: dict, seed: int | None = None):
+        object.__setattr__(self, "_state", dict(state))
+        _seed = seed if seed is not None else int(state.get("config_seed", 42))
+        object.__setattr__(self, "_seed", _seed)
+        object.__setattr__(self, "_rng", random.Random(_seed))
+        # Lazily-built generators keyed by field_name
+        object.__setattr__(self, "_generators", {})
 
     # ------------------------------------------------------------------
-    # Length Parameters
+    # Attribute access – backward compatibility
     # ------------------------------------------------------------------
-    length_mode: str = (
-        "undefined"  # "undefined", "fixed for dataset", "fixed for trajectory"
-    )
-    length: int = 10
-    length_distribution: Optional[str] = None  # "uniform", "normal"
-    length_min: int = 5
-    length_max: int = 50
-    length_mean: float = 25.0
-    length_std: float = 5.0
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(name)
 
-    # ------------------------------------------------------------------
-    # Spatial Step Size Parameters
-    # ------------------------------------------------------------------
-    spatial_step_size_mode: str = "undefined"
-    spatial_step_size: float = 1.0
-    spatial_step_size_distribution: Optional[str] = None
-    spatial_step_size_min: float = 0.1
-    spatial_step_size_max: float = 2.0
-    spatial_step_size_mean: float = 1.0
-    spatial_step_size_std: float = 0.2
+        # 1) get_* methods → always return a callable proxy
+        if name.startswith("get_"):
 
-    # ------------------------------------------------------------------
-    # Smoothness Parameters
-    # ------------------------------------------------------------------
-    smoothness_mode: str = "undefined"
-    smoothness: float = 1.0
-    smoothness_distribution: Optional[str] = None
-    smoothness_min: float = 0.5
-    smoothness_max: float = 2.0
-    smoothness_mean: float = 1.0
-    smoothness_std: float = 0.2
+            def _method_proxy(*_args, **_kwargs):
+                return self.get_next_value(name)
 
-    # ------------------------------------------------------------------
-    # Temporal Parameters (Velocity, Acceleration, Time)
-    # ------------------------------------------------------------------
-    time_step: float = 1.0
-    time_step_distribution: Optional[str] = None  # For resampling strategy requirement
+            return _method_proxy
 
-    # Velocity
-    velocity_mode: str = "fixed for dataset"
-    velocity: float = 1.0
-    velocity_distribution: Optional[str] = None
-    velocity_min: float = 1.0
-    velocity_max: float = 1.0
-    velocity_mean: float = 1.0
-    velocity_std: float = 0.1
+        config_key = f"config_{name}"
 
-    # Acceleration
-    acceleration_mode: str = "fixed for dataset"
-    acceleration: float = 0.0
-    acceleration_distribution: Optional[str] = None
-    acceleration_min: float = -1.0
-    acceleration_max: float = 1.0
-    acceleration_mean: float = 0.0
-    acceleration_std: float = 0.1
+        # 2) Mode-based value (configured via universal_user_input_method)
+        mode_key = f"{config_key}_mode"
+        if mode_key in self._state:
+            return self.get_next_value(name)
 
-    # Start Time & Temporal Extent
-    start_time_mode: str = "fixed for dataset"
-    start_time: float = 0.0
-    start_time_distribution: Optional[str] = None
-    start_time_min: float = 0.0
-    start_time_max: float = 10.0
-    start_time_mean: float = 0.0
-    start_time_std: float = 1.0
+        # 3) Try with get_next_ prefix (e.g. closed_loop → get_next_closed_loop)
+        get_next_mode_key = f"config_get_next_{name}_mode"
+        if get_next_mode_key in self._state:
+            return self.get_next_value(f"get_next_{name}")
 
-    temporal_extent_mode: str = "undefined"
-    temporal_extent: float = 10.0
-    temporal_extent_distribution: Optional[str] = None
-    temporal_extent_min: float = 1.0
-    temporal_extent_max: float = 20.0
-    temporal_extent_mean: float = 10.0
-    temporal_extent_std: float = 2.0
+        # 4) Direct value lookup
+        if config_key in self._state:
+            return self._state[config_key]
 
-    # ------------------------------------------------------------------
-    # Point Generation (Start/End/Normal)
-    # ------------------------------------------------------------------
-    point_generator: Optional[PointGenerator] = None
+        # 5) Unprefixed lookup (e.g. selected_method)
+        if name in self._state:
+            return self._state[name]
 
-    # Start Point
-    start_point_mode: str = "undefined"
-    # Note: we use flattened coordinates for start/end points
-    start_point_x: float = 0.0
-    start_point_y: float = 0.0
-    start_point_z: float = 0.0
+        # 6) Built-in helpers
+        if name == "rng":
+            return self._rng
+        if name == "seed":
+            return self._seed
 
-    # End Point
-    end_point_mode: str = "undefined"
-    end_point_x: float = 1.0
-    end_point_y: float = 1.0
-    end_point_z: float = 1.0
+        raise AttributeError(f"Config has no attribute '{name}'")
 
-    # ------------------------------------------------------------------
-    # Strategy Specific Parameters
-    # ------------------------------------------------------------------
-
-    # Equal Distribution
-    grid_rows: int = 100
-    grid_cols: int = 100
-
-    # Polynomial
-    num_control_points: Optional[int] = None
-    interior_margin: Optional[float] = None
-    closed_loop: bool = False
-
-    # Freespace
-    size_generator: Optional[PointGenerator] = None
-    deviation_factor: float = 0.1
-    num_obstacles: int = 2
-    obstacle_size_min: float = 0.01
-    obstacle_size_max: float = 0.15
-
-    # OSM Sampling
-    osm_place: Optional[str] = None
-    osm_pbf_path: Optional[str] = None
-    osm_max_hops: Optional[int] = None
-    osm_max_meters: Optional[float] = None
-    osm_jitter_std_m: Optional[float] = None
-    osm_max_attempts_per_traj: int = 5
-
-    # Resampling - Constant Length
-    target_length: int = 10
-    target_length_mode: str = "fixed for dataset"  # Inferred default
-
-    # Resampling - Constant Time
-    time_step_size: float = 0.1  # distinct from 'time_step' used in generation
-
-    # Noise Resampling
-    noise_type: str = "random"  # "random", "orthogonal"
-    noise_level: float = 1.0
-
-    # Physics
-    gravity: float = 9.81
-    simulation_time: float = 10.0
-    bounce_damping: float = 0.8
-    num_balls: int = 1
-
-    # Distance Function
-    distance_function_name: str = "Euclidean"  # "Euclidean", "Manhattan"
-
-    # ------------------------------------------------------------------
-    # I/O Parameters
-    # ------------------------------------------------------------------
-    output: str = "trajectory.txt"
-    parameters: str = "params.json"
-
-    # ------------------------------------------------------------------
-    # Helper Methods
-    # ------------------------------------------------------------------
-    def _get_scalar_from_mode(self, prefix: str) -> Union[int, float]:
-        """
-        Generic helper to get a scalar value based on mode/distribution.
-        prefix: e.g., 'length', 'velocity', 'spatial_step_size'
-        """
-        # Try to find specific mode attribute, generic fallback to "fixed for dataset" if not found but value exists
-        mode_attr = f"{prefix}_mode"
-        if not hasattr(self, mode_attr):
-            # If no mode attribute, assume simple scalar access
-            if hasattr(self, prefix):
-                return getattr(self, prefix)
-            return 0
-
-        mode = getattr(self, mode_attr)
-
-        if mode == "fixed for dataset" or mode is None:
-            if hasattr(self, prefix):
-                val = getattr(self, prefix)
-                if val is not None:
-                    return val
-            # Fallback if specific prop is None/missing
-            return 0
-
-        elif mode == "fixed for trajectory":
-            dist = getattr(self, f"{prefix}_distribution", None)
-
-            if dist == "uniform":
-                min_val = getattr(self, f"{prefix}_min", 0)
-                max_val = getattr(self, f"{prefix}_max", 1)
-
-                # Heuristic for int vs float
-                is_float = isinstance(min_val, float) or isinstance(max_val, float)
-                if not is_float:
-                    # Check base property type hint or default value
-                    base_val = getattr(self, prefix, None)
-                    if isinstance(base_val, float):
-                        is_float = True
-
-                if is_float:
-                    return self.rng.uniform(min_val, max_val)
-                else:
-                    return self.rng.randint(min_val, max_val)
-
-            elif dist == "normal":
-                mean_val = getattr(self, f"{prefix}_mean", 0)
-                std_val = getattr(self, f"{prefix}_std", 1)
-                val = self.rng.normalvariate(mean_val, std_val)
-
-                # Heuristic for int/float
-                if isinstance(mean_val, int) and isinstance(std_val, int):
-                    return int(val)
-                return val
-            else:
-                # If distribution is Undefined or None in trajectory mode, fallback to dataset value?
-                # Or raise error. Let's return dataset value for robustness
-                if hasattr(self, prefix):
-                    return getattr(self, prefix)
-
-        elif mode == "undefined":
-            if hasattr(self, prefix):
-                return getattr(self, prefix)
-            return 0
-
-        return 0
-
-    def get_next_value(self, field_name: str):
-        """
-        Mimic app config generic getter.
-        """
-        # Strip 'get_next_' prefix if present to find the base property
-        if field_name.startswith("get_next_"):
-            base_name = field_name[9:]
+    def __setattr__(self, name: str, value):
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
         else:
-            base_name = field_name
+            self._state[f"config_{name}"] = value
 
-        # Specific overrides
-        if base_name == "point":
-            return self.get_next_point()
-        if base_name == "bounding_box":
-            return self.get_next_bounding_box()
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def get_next_value(self, field_name: str):
+        """Return the next value for *field_name* based on UI configuration.
 
-        # General scalar lookup
-        return self._get_scalar_from_mode(base_name)
+        Depending on the type (int / float / point / bool) and the chosen
+        mode (fixed for dataset / fixed for trajectory), this either returns
+        a constant or draws from a lazily-built distribution.
+        """
+        value_type = self._detect_type(field_name)
 
-    # --- Specific Getters used by Strategies ---
+        if value_type == "point":
+            return self._get_next_point(field_name)
+        elif value_type == "bool":
+            return self._get_next_bool(field_name)
+        else:
+            return self._get_next_scalar(field_name, value_type)
 
-    def get_next_length(self) -> int:
-        val = self._get_scalar_from_mode("length")
-        return max(1, int(val))
+    def get(self, key: str, default=None):
+        """Dict-style access into the state snapshot."""
+        config_key = f"config_{key}" if not key.startswith("config_") else key
+        return self._state.get(config_key, default)
 
-    def get_next_spatial_step_size(self) -> float:
-        val = self._get_scalar_from_mode("spatial_step_size")
-        return max(0.0001, float(val))
-
-    def get_next_velocity(self) -> float:
-        # Backward compatibility for legacy files setting min/max directly without mode
-        if self.velocity_mode == "fixed for dataset":
-            # Check if legacy range is active (diff values)
-            if hasattr(self, "velocity_min") and hasattr(self, "velocity_max"):
-                if self.velocity_min != self.velocity_max:
-                    # If defaults (1.0) are changed, likely user intent
-                    if self.velocity_min != 1.0 or self.velocity_max != 1.0:
-                        return self.rng.uniform(self.velocity_min, self.velocity_max)
-
-        val = self._get_scalar_from_mode("velocity")
-        return float(val)
-
-    def get_next_acceleration(self) -> float:
-        val = self._get_scalar_from_mode("acceleration")
-        return float(val)
+    # ------------------------------------------------------------------
+    # Explicit backward-compat methods that DON'T follow the generic
+    # mode / distribution pattern used by universal_user_input_method.
+    # ------------------------------------------------------------------
+    def get_next_bounding_box(self):
+        spatial_dim = self._state.get("config_spatial_dimension", "2D")
+        x_min = float(self._state.get("config_x_min", 0.0))
+        x_max = float(self._state.get("config_x_max", 1.0))
+        y_min = float(self._state.get("config_y_min", 0.0))
+        y_max = float(self._state.get("config_y_max", 1.0))
+        if spatial_dim == "3D":
+            z_min = float(self._state.get("config_z_min", 0.0))
+            z_max = float(self._state.get("config_z_max", 1.0))
+            return (x_min, x_max, y_min, y_max, z_min, z_max)
+        return (x_min, x_max, y_min, y_max)
 
     def get_next_tmin(self) -> float:
-        val = self._get_scalar_from_mode("start_time")
-        return float(val)
+        return float(self._state.get("config_tmin", 0.0))
 
-    def get_next_temporal_extent(self) -> float:
-        val = self._get_scalar_from_mode("temporal_extent")
-        return float(val)
+    def get_next_velocity(self) -> float:
+        # Try generic UI configuration first
+        mode_key = "config_get_next_velocity_mode"
+        if mode_key in self._state:
+            return self._get_next_scalar("get_next_velocity", "float")
+        # Fallback to legacy min/max velocity
+        min_v = float(self._state.get("config_min_velocity", 1.0))
+        max_v = float(self._state.get("config_max_velocity", 1.0))
+        return self._rng.uniform(min_v, max_v)
+
+    def get_next_acceleration(self) -> float:
+        mode_key = "config_get_next_acceleration_mode"
+        if mode_key in self._state:
+            return self._get_next_scalar("get_next_acceleration", "float")
+        return float(self._state.get("config_acceleration", 0.0))
 
     def get_next_time_step(self) -> float:
-        # Note: Physics strategy asks for 'time_step', FixedTime strategy asks for 'time_step'
-        return float(self.time_step)
-
-    def get_next_time_step_size(self) -> float:
-        # Used by resampling
-        return float(self.time_step_size)
-
-    def get_next_target_length(self) -> int:
-        val = self._get_scalar_from_mode("target_length")
-        return int(val)
-
-    def get_next_bounding_box(self) -> Tuple[float, ...]:
-        if self.spatial_dimension == "2D":
-            return (self.x_min, self.x_max, self.y_min, self.y_max)
-        else:
-            return (
-                self.x_min,
-                self.x_max,
-                self.y_min,
-                self.y_max,
-                self.z_min,
-                self.z_max,
-            )
-
-    # Properties for get_next_x_min etc used by bbox_requirements
-    @property
-    def get_next_x_min(self):
-        return self.x_min
-
-    @property
-    def get_next_x_max(self):
-        return self.x_max
-
-    @property
-    def get_next_y_min(self):
-        return self.y_min
-
-    @property
-    def get_next_y_max(self):
-        return self.y_max
-
-    @property
-    def get_next_z_min(self):
-        return self.z_min
-
-    @property
-    def get_next_z_max(self):
-        return self.z_max
-
-    # Strategy specific lookups that might use distribution logic
-
-    def get_next_grid_rows(self) -> int:
-        return self.grid_rows
-
-    def get_next_grid_cols(self) -> int:
-        return self.grid_cols
-
-    def get_next_num_control_points(self) -> int:
-        if self.num_control_points is None:
-            return 5
-        return self.num_control_points
-
-    def get_next_closed_loop(self) -> bool:
-        return self.closed_loop
-
-    def get_next_num_obstacles(self) -> int:
-        return self.num_obstacles
-
-    def get_next_obstacle_size_min(self) -> float:
-        return self.obstacle_size_min
-
-    def get_next_obstacle_size_max(self) -> float:
-        return self.obstacle_size_max
-
-    def get_next_osm_max_hops(self) -> int:
-        return self.osm_max_hops if self.osm_max_hops else 10
-
-    def get_next_osm_jitter_std_m(self) -> float:
-        return self.osm_jitter_std_m if self.osm_jitter_std_m else 5.0
-
-    def get_next_osm_max_meters(self) -> float:
-        return self.osm_max_meters if self.osm_max_meters else 5000.0
-
-    def get_next_osm_max_attempts_per_traj(self) -> int:
-        return self.osm_max_attempts_per_traj
+        return float(self._state.get("config_time_step", 1.0))
 
     def get_next_point(self) -> Point:
-        if self.point_generator is not None:
-            points = self.point_generator(1)
+        """Legacy: delegates to point_generator if set, else UI config."""
+        pg = self._state.get("config_point_generator")
+        if pg is not None:
+            points = pg(1)
             return points[0]
-        # Fallback to random in bbox
-        return self._random_point_from_bbox()
+        return self.get_next_value("get_next_point")
+
+    def get_start_point(self) -> Point:
+        return self.get_next_value("get_start_point")
+
+    def get_end_point(self) -> Point:
+        return self.get_next_value("get_end_point")
+
+    def validate(self):
+        """Minimal validation – extend as needed."""
+        num_traj = self._state.get("config_num_trajectories", 0)
+        assert num_traj > 0, "num_trajectories must be positive"
+
+    # ------------------------------------------------------------------
+    # Type detection
+    # ------------------------------------------------------------------
+    def _detect_type(self, field_name: str) -> str:
+        """Infer the return type for *field_name*."""
+        # 1) Check Properties metadata
+        mode_attr = f"config_{field_name}_mode"
+        prop = getattr(Properties, mode_attr, None)
+        if prop is not None and isinstance(prop, dict):
+            type_str = prop.get("type", "")
+            if "int" in type_str:
+                return "int"
+            if "float" in type_str:
+                return "float"
+            if "str" in type_str or "string" in type_str:
+                return "str"
+            if "point" in type_str:
+                return "point"
+            if "bool" in type_str:
+                return "bool"
+
+        # 2) Point-specific mode key in state
+        # Strip trailing _point before adding suffix to avoid double _point
+        _base = field_name[:-6] if field_name.endswith("_point") else field_name
+        point_mode_key = f"config_{_base}_point_mode"
+        if point_mode_key in self._state:
+            return "point"
+
+        # 3) Bool-specific probability key
+        prob_key = f"config_{field_name}_probability"
+        if prob_key in self._state:
+            return "bool"
+
+        # 4) Infer from the stored value itself
+        config_key = f"config_{field_name}"
+        mode_key = f"{config_key}_mode"
+        if mode_key in self._state:
+            val = self._state.get(config_key)
+            if isinstance(val, bool):
+                return "bool"
+            if isinstance(val, int):
+                return "int"
+            if isinstance(val, float):
+                return "float"
+            if isinstance(val, str):
+                return "str"
+
+        # 5) Infer from Properties for the value entry
+        val_prop = getattr(Properties, config_key, None)
+        if val_prop and isinstance(val_prop, dict):
+            t = val_prop.get("type", "")
+            if t == "int":
+                return "int"
+            if t == "float":
+                return "float"
+            if t == "str":
+                return "str"
+
+        return "float"  # ultimate default
+
+    # ------------------------------------------------------------------
+    # Scalar (int / float) handling
+    # ------------------------------------------------------------------
+    def _get_next_scalar(self, field_name: str, value_type: str):
+        config_name = f"config_{field_name}"
+        mode_key = f"{config_name}_mode"
+        mode = self._state.get(mode_key)
+
+        if mode == "fixed for dataset":
+            val = self._state.get(config_name)
+            if val is None:
+                raise ValueError(
+                    f"No value stored for '{field_name}' in "
+                    "'fixed for dataset' mode."
+                )
+            if value_type == "str":
+                return str(val)
+            return int(val) if value_type == "int" else float(val)
+
+        if mode == "fixed for trajectory":
+            gen_key = f"_gen_{field_name}"
+            if gen_key not in self._generators:
+                self._generators[gen_key] = self._build_scalar_generator(
+                    field_name, value_type
+                )
+            return self._generators[gen_key]()
+
+        if mode is None or mode == "undefined":
+            raise ValueError(
+                f"Mode for '{field_name}' is undefined. "
+                "Configure it in the UI first."
+            )
+        raise ValueError(f"Unknown mode '{mode}' for '{field_name}'")
+
+    def _build_scalar_generator(self, field_name: str, value_type: str):
+        config_name = f"config_{field_name}"
+        dist_key = f"{config_name}_distribution"
+        distribution = self._state.get(dist_key)
+
+        if distribution == "uniform":
+            min_val = self._find_param(field_name, "min")
+            max_val = self._find_param(field_name, "max")
+            if min_val is None or max_val is None:
+                raise ValueError(
+                    f"Uniform distribution for '{field_name}' "
+                    "requires min and max parameters."
+                )
+            if value_type == "int":
+                lo, hi = int(min_val), int(max_val)
+                return lambda: self._rng.randint(lo, hi)
+            lo, hi = float(min_val), float(max_val)
+            return lambda: self._rng.uniform(lo, hi)
+
+        if distribution == "normal":
+            mean_val = self._find_param(field_name, "mean")
+            std_val = self._find_param(field_name, "std")
+            if mean_val is None or std_val is None:
+                raise ValueError(
+                    f"Normal distribution for '{field_name}' "
+                    "requires mean and std parameters."
+                )
+            mu, sigma = float(mean_val), float(std_val)
+            if value_type == "int":
+                return lambda: int(self._rng.gauss(mu, sigma))
+            return lambda: self._rng.gauss(mu, sigma)
+
+        raise ValueError(f"Unknown distribution '{distribution}' for '{field_name}'")
+
+    def _find_param(self, field_name: str, suffix: str):
+        """Search session-state for a distribution parameter.
+
+        Tries two naming patterns produced by universal_user_input_method:
+        1. ``config_{field_name}_{suffix}``   (fallback pattern)
+        2. Any key starting with ``config_{field_name}_`` and ending with
+           ``_{suffix}``                       (Properties-based pattern)
+        """
+        config_name = f"config_{field_name}"
+
+        # Pattern 1: direct
+        key1 = f"{config_name}_{suffix}"
+        val = self._state.get(key1)
+        if val is not None:
+            return val
+
+        # Pattern 2: search
+        for key, val in self._state.items():
+            if (
+                key.startswith(config_name + "_")
+                and key.endswith(f"_{suffix}")
+                and val is not None
+            ):
+                return val
+        return None
+
+    # ------------------------------------------------------------------
+    # Bool handling
+    # ------------------------------------------------------------------
+    def _get_next_bool(self, field_name: str):
+        config_name = f"config_{field_name}"
+        mode_key = f"{config_name}_mode"
+        mode = self._state.get(mode_key, "fixed for dataset")
+
+        if mode == "fixed for dataset":
+            return bool(self._state.get(config_name, False))
+
+        if mode == "fixed for trajectory":
+            prob = float(self._state.get(f"{config_name}_probability", 0.5))
+            return self._rng.random() < prob
+
+        raise ValueError(f"Unknown bool mode '{mode}' for '{field_name}'")
+
+    # ------------------------------------------------------------------
+    # Point handling
+    # ------------------------------------------------------------------
+    def _get_next_point(self, field_name: str) -> Point:
+        # Strip trailing _point before adding suffix to avoid double _point
+        _base = field_name[:-6] if field_name.endswith("_point") else field_name
+        point_prefix = f"config_{_base}_point"
+        mode_key = f"{point_prefix}_mode"
+        dist_key = f"{point_prefix}_distribution"
+
+        mode = self._state.get(mode_key, "undefined")
+        spatial_dim = self._state.get("config_spatial_dimension", "2D")
+        spatial_dim_type = self._state.get("config_spatial_dim_type", "continuous")
+        is_3d = spatial_dim == "3D"
+
+        if mode == "fixed for dataset":
+            x = float(self._state.get(f"{point_prefix}_x", 0.0))
+            y = float(self._state.get(f"{point_prefix}_y", 0.0))
+            if is_3d:
+                z = float(self._state.get(f"{point_prefix}_z", 0.0))
+                return Point(x, y, z)
+            return Point(x, y)
+
+        if mode == "fixed for trajectory":
+            distribution = self._state.get(dist_key)
+            gen_key = f"_gen_{field_name}_point"
+            if gen_key not in self._generators:
+                self._generators[gen_key] = self._build_point_generator(
+                    point_prefix, distribution, spatial_dim, spatial_dim_type
+                )
+            return self._generators[gen_key]()
+
+        if mode == "undefined" or mode is None:
+            # Not configured – return None so callers can treat it as
+            # "no fixed point" and fall back to their own logic.
+            return None
+        raise ValueError(f"Unknown point mode '{mode}' for '{field_name}'")
 
     def _random_point_from_bbox(self) -> Point:
-        x = self.rng.uniform(self.x_min, self.x_max)
-        y = self.rng.uniform(self.y_min, self.y_max)
-        if self.spatial_dimension == "3D":
-            z = self.rng.uniform(self.z_min, self.z_max)
+        """Return a uniformly random point inside the configured bounding box."""
+        x = self._rng.uniform(
+            float(self._state.get("config_get_next_x_min", 0.0)),
+            float(self._state.get("config_get_next_x_max", 1.0)),
+        )
+        y = self._rng.uniform(
+            float(self._state.get("config_get_next_y_min", 0.0)),
+            float(self._state.get("config_get_next_y_max", 1.0)),
+        )
+        if self._state.get("config_spatial_dimension", "2D") == "3D":
+            z = self._rng.uniform(
+                float(self._state.get("config_get_next_z_min", 0.0)),
+                float(self._state.get("config_get_next_z_max", 1.0)),
+            )
             return Point(x, y, z)
         return Point(x, y)
 
-    def get_start_point(self) -> Optional[Point]:
-        if self.start_point_mode == "fixed for dataset":
-            if self.spatial_dimension == "3D":
-                return Point(self.start_point_x, self.start_point_y, self.start_point_z)
-            return Point(self.start_point_x, self.start_point_y)
-        return None
+    def _build_point_generator(
+        self,
+        point_prefix: str,
+        distribution: str,
+        spatial_dim: str,
+        spatial_dim_type: str,
+    ):
+        is_3d = spatial_dim == "3D"
+        discrete_type = self._state.get("config_discrete_dim_type", "grid-based")
+        grid_res = float(self._state.get("config_grid_resolution", 1.0))
 
-    def get_end_point(self) -> Optional[Point]:
-        if self.end_point_mode == "fixed for dataset":
-            if self.spatial_dimension == "3D":
-                return Point(self.end_point_x, self.end_point_y, self.end_point_z)
-            return Point(self.end_point_x, self.end_point_y)
-        return None
+        if distribution == "uniform":
+            return self._build_uniform_point_gen(
+                point_prefix, is_3d, spatial_dim_type, discrete_type, grid_res
+            )
+        if distribution == "normal":
+            return self._build_normal_point_gen(
+                point_prefix, is_3d, spatial_dim_type, discrete_type, grid_res
+            )
+        if distribution == "discrete set":
+            return self._build_discrete_point_gen(point_prefix, spatial_dim)
 
+        raise ValueError(
+            f"Unknown point distribution '{distribution}' " f"for '{point_prefix}'"
+        )
+
+    # -- Uniform point generator -----------------------------------------
+    def _build_uniform_point_gen(self, pfx, is_3d, dim_type, disc_type, res):
+        x0 = float(self._state.get(f"{pfx}_uniform_x_min", 0.0))
+        x1 = float(self._state.get(f"{pfx}_uniform_x_max", 1.0))
+        y0 = float(self._state.get(f"{pfx}_uniform_y_min", 0.0))
+        y1 = float(self._state.get(f"{pfx}_uniform_y_max", 1.0))
+        z0 = float(self._state.get(f"{pfx}_uniform_z_min", 0.0)) if is_3d else 0.0
+        z1 = float(self._state.get(f"{pfx}_uniform_z_max", 1.0)) if is_3d else 0.0
+
+        snap = dim_type == "discrete" and disc_type == "grid-based"
+
+        def gen():
+            x = self._rng.uniform(x0, x1)
+            y = self._rng.uniform(y0, y1)
+            if snap:
+                x = self._snap_to_grid(x, res)
+                y = self._snap_to_grid(y, res)
+            if is_3d:
+                z = self._rng.uniform(z0, z1)
+                if snap:
+                    z = self._snap_to_grid(z, res)
+                return Point(x, y, z)
+            return Point(x, y)
+
+        return gen
+
+    # -- Normal point generator ------------------------------------------
+    def _build_normal_point_gen(self, pfx, is_3d, dim_type, disc_type, res):
+        mx = float(self._state.get(f"{pfx}_normal_mean_x", 0.5))
+        sx = float(self._state.get(f"{pfx}_normal_std_x", 0.1))
+        my = float(self._state.get(f"{pfx}_normal_mean_y", 0.5))
+        sy = float(self._state.get(f"{pfx}_normal_std_y", 0.1))
+        mz = float(self._state.get(f"{pfx}_normal_mean_z", 0.5)) if is_3d else 0.0
+        sz = float(self._state.get(f"{pfx}_normal_std_z", 0.1)) if is_3d else 0.0
+
+        snap = dim_type == "discrete" and disc_type == "grid-based"
+
+        def gen():
+            x = self._rng.gauss(mx, sx)
+            y = self._rng.gauss(my, sy)
+            if snap:
+                x = self._snap_to_grid(x, res)
+                y = self._snap_to_grid(y, res)
+            if is_3d:
+                z = self._rng.gauss(mz, sz)
+                if snap:
+                    z = self._snap_to_grid(z, res)
+                return Point(x, y, z)
+            return Point(x, y)
+
+        return gen
+
+    # -- Discrete-set point generator ------------------------------------
+    def _build_discrete_point_gen(self, pfx, spatial_dim):
+        points = self._collect_discrete_points(pfx, spatial_dim)
+        if not points:
+            raise ValueError(f"No discrete points defined for '{pfx}'")
+
+        def gen():
+            return self._rng.choice(points)
+
+        return gen
+
+    def _collect_discrete_points(self, pfx, spatial_dim):
+        is_3d = spatial_dim == "3D"
+        count_key = f"{pfx}_discrete_count"
+        pts_key = f"{pfx}_discrete_points"
+        n = int(self._state.get(count_key, 0))
+        points = []
+        for i in range(n):
+            pk = f"{pts_key}_point_{i}"
+            x = self._state.get(f"{pk}_x")
+            y = self._state.get(f"{pk}_y")
+            if x is not None and y is not None:
+                if is_3d:
+                    z = self._state.get(f"{pk}_z", 0.0)
+                    points.append(Point(float(x), float(y), float(z)))
+                else:
+                    points.append(Point(float(x), float(y)))
+        return points
+
+    @staticmethod
+    def _snap_to_grid(value: float, resolution: float) -> float:
+        if resolution <= 0:
+            return value
+        return round(value / resolution) * resolution
+
+    # ------------------------------------------------------------------
+    # Distance Functions
+    # ------------------------------------------------------------------
     @property
-    def distance_function(self) -> Callable:
-        dims = 3 if self.spatial_dimension == "3D" else 2
-        name = self.distance_function_name
+    def distance_function(self):
+        """Return the distance callable selected in the UI (dimension-aware)."""
+        name = self._state.get("config_distance_function", "Euclidean")
+        dims = 3 if self._state.get("config_spatial_dimension", "2D") == "3D" else 2
 
         if name == "Manhattan":
             return lambda a, b: sum(
@@ -444,34 +515,3 @@ class Config:
             )
             ** 0.5
         )
-
-    def get_next_spatial_extent(self):
-        raise NotImplementedError()
-
-    def validate(self):
-        assert self.num_trajectories > 0, "num_trajectories must be positive"
-        # Add strategy validations as needed
-
-    def write_to_file(self, filepath: str):
-        # Exclude internal/complex objects for JSON serialization
-        data = {
-            k: v
-            for k, v in self.__dict__.items()
-            if k not in ["rng", "point_generator", "size_generator"]
-        }
-        import json
-
-        with open(filepath, "w") as f:
-            json.dump(data, f, indent=4)
-
-    def read_from_file(self, filepath: str):
-        import json
-
-        with open(filepath, "r") as f:
-            data = json.load(f)
-            for key, value in data.items():
-                if hasattr(self, key):
-                    setattr(self, key, value)
-
-            # Re-init RNG only if seed is present, or just to be safe
-            self.rng = random.Random(self.seed)

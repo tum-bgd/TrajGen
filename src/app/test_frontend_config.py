@@ -10,7 +10,7 @@ import pytest
 # But since file is in src/app, importing config directly might work if we add src/app
 # Let's try importing config from .config
 try:
-    from app.config import Config
+    from trajgen.config import Config
 except ImportError:
     # If standard import fails, try relative or direct file import approach for test
     sys.path.append(os.path.dirname(__file__))

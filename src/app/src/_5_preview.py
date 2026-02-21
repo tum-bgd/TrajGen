@@ -11,7 +11,7 @@ from src.method_overview import (
     ALL_RESAMPLING_METHODS,
 )  # noqa
 from trajgen.trajectory import Trajectory
-from config import Config  # noqa
+from trajgen.config import Config  # noqa
 from trajgen.point_generator import (  # noqa
     RandomPointGenerator2D,
     RandomPointGenerator3D,
