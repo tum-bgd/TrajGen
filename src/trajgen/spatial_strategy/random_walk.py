@@ -36,7 +36,7 @@ class RandomWalkStrategy:
         except Exception:
             pass
 
-        if self.config.closed_loop and len(points) > 1:
+        if self.config.get_next_closed_loop() and len(points) > 1:
             points[-1] = points[0]
 
         coords = [(p.x, p.y, p.z) if p.has_z else (p.x, p.y) for p in points]

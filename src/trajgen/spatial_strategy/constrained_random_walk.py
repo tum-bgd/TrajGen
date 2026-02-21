@@ -16,7 +16,7 @@ class ConstrainedRandomWalkStrategy:
 
     def __call__(self, id: int) -> Trajectory:
         points = self.point_generator(self.config.get_next_length())
-        if self.config.closed_loop and len(points) > 1:
+        if self.config.get_next_closed_loop and len(points) > 1:
             start = points[0]
             points[-1] = start
         line = LineString([(point.x, point.y) for point in points])
