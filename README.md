@@ -69,3 +69,9 @@ Step 6 allows the generation of a large trajectory dataset and a simple download
 For evaluation purposes, a timed variant is also available, which additionally stores the time required for trajectory generation in file in the log folder.
 
 ![Step 6. in the TrajGen Process: Generating and downloading the trajectory dataset](assets/generate.png)
+
+
+# Funding and Acknowledgements
+This work is part of the ``Bloom Filter as a Tool to Organize Complex and Big Geospatial Data'' at the Professorship for Big Geospatial Data Management, Technical University of Munich, Germany (https://www.bgd.ed.tum.de/en/projects/bloomfilter/).
+
+The work is funded by the Deutsche Forschungsgemeinschaft (DFG,German Research Foundation) - 507196470.
