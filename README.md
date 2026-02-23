@@ -1,9 +1,9 @@
 # TrajGen
 This is a repository that holds different trajectory generation algorithms, which are meant to be used for research and development of spatial-temporal data services. 
 
-The repository features an easy-to-use frontend for configuring trajectory generation. 
+The work is part of the ``Bloom Filter as a Tool to Organize Complex and Big Geospatial Data'' at the Professorship for Big Geospatial Data Management, Technical University of Munich, Germany (https://www.bgd.ed.tum.de/en/projects/bloomfilter/), which is funded by the Deutsche Forschungsgemeinschaft (DFG,German Research Foundation) - 507196470.
 
-
+Apart from algorithms for trajectory generation the repository features an easy-to-use frontend to configuring these methods and have previews of the configurations in an interactive manner.
 
 
 # Install and Check Installation
@@ -70,8 +70,3 @@ For evaluation purposes, a timed variant is also available, which additionally s
 
 ![Step 6. in the TrajGen Process: Generating and downloading the trajectory dataset](assets/generate.png)
 
-
-# Funding and Acknowledgements
-This work is part of the ``Bloom Filter as a Tool to Organize Complex and Big Geospatial Data'' at the Professorship for Big Geospatial Data Management, Technical University of Munich, Germany (https://www.bgd.ed.tum.de/en/projects/bloomfilter/).
-
-The work is funded by the Deutsche Forschungsgemeinschaft (DFG,German Research Foundation) - 507196470.
