@@ -286,7 +286,7 @@ def _legend_handles():
         mpatches.Patch(
             facecolor=C_OBS_FILL,
             edgecolor=C_OBS_EDGE,
-            label="Obstacle (Freespace)",
+            label="Obstacle\n(Freespace)",
         ),
         Line2D(
             [0],
@@ -296,9 +296,9 @@ def _legend_handles():
             color="w",
             markerfacecolor=C_PT,
             markersize=6,
-            label="PT hotspot (OSM)",
+            label="PT hotspot\n(OSM)",
         ),
-        Line2D([0], [0], color=C_ROAD, linewidth=1.5, label="Road network (OSM)"),
+        Line2D([0], [0], color=C_ROAD, linewidth=1.5, label="Road network\n(OSM)"),
     ]
 
 
@@ -323,17 +323,16 @@ def main() -> None:
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = os.path.join(ASSETS_DIR, f"trajectory_methods_{run_id}.pdf")
-    out_config_path = os.path.join(
-        ASSETS_DIR, f"trajectory_methods_{run_id}_config_"
-    )
+    out_config_path = os.path.join(ASSETS_DIR, f"trajectory_methods_{run_id}_config_")
 
+    subplot_width = (0.833 * PAGEWIDTH_INCHES) / len(PANELS)
     fig, axes = plt.subplots(
         1,
         len(PANELS),
-        figsize=(PAGEWIDTH_INCHES, 0.3 * PAGEWIDTH_INCHES),
+        figsize=(PAGEWIDTH_INCHES, subplot_width),
         gridspec_kw={"wspace": 0.40},
     )
-    fig.subplots_adjust(left=0.0, right=1.0, top=1.0, bottom=0.3)
+    fig.subplots_adjust(left=0.0, right=0.833, top=1.0, bottom=0.0)
     # fig.suptitle(
     #     "Spatial Trajectory Sampling Methods",
     #     fontsize=11,
@@ -347,14 +346,14 @@ def main() -> None:
         cfg_dict = {k: v for k, v in cfg.__dict__.items() if not k.startswith("_")}
         cfg_dict["seed"] = cfg.seed  # include seed explicitly
         cfg_dict["spatial_strategy"] = name
-        with open(out_config_path+name+".json", "w", encoding="utf-8") as fh:
+        with open(out_config_path + name + ".json", "w", encoding="utf-8") as fh:
             json.dump(cfg_dict, fh, indent=2)
 
     fig.legend(
         handles=_legend_handles(),
-        loc="lower center",
-        ncol=6,
-        bbox_to_anchor=(0.5, 0.01),
+        loc="center left",
+        ncol=1,
+        bbox_to_anchor=(0.833, 0.5),
         fontsize=7.5,
         frameon=True,
         framealpha=0.9,
@@ -368,7 +367,6 @@ def main() -> None:
     # ----------------------------------------------------------------------- #
     # Config file — records every parameter used to produce the SVG
     # ----------------------------------------------------------------------- #
-
 
     print(f"Config  → {out_config_path}")
 
