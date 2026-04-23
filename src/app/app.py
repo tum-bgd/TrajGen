@@ -6,12 +6,22 @@ from src._3_temporal_method import show_temporal_method_selection_step  # noqa
 from src._4_resampling_method import show_resampling_method_selection_step  # noqa
 from src._5_preview import show_preview_step  # noqa
 from src._6_generate import show_generation_step  # noqa
+from src._header import tum_header  # noqa
+from src._footer import tum_footer  # noqa
+from pathlib import Path
 
 
 def main():
-    st.set_page_config(page_title="TrajGen", page_icon="📈", layout="wide")
+    page_icon=Path(__file__).parent / "assets/bgd_favicon.png"
 
-    st.title("📈TrajGen Trajectory Generator")
+    if not page_icon.exists():
+        st.error(f"Favicon nicht gefunden unter: {page_icon.resolve()}")
+        page_icon = None  # Fallback auf Standard-Icon
+
+    st.set_page_config(page_title="TrajGen", page_icon=page_icon, layout="wide")
+
+    tum_header("TrajGen Trajectory Generator")
+    st.title("TrajGen Trajectory Generator")
     st.write(
         "Generate synthetic trajectory data using various spatial and temporal strategies."
     )
@@ -78,6 +88,8 @@ def main():
     elif current_step == 6:
         show_generation_step()
 
+
+    tum_footer()
 
 if __name__ == "__main__":
     main()
