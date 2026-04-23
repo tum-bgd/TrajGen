@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def main():
-    page_icon=Path(__file__).parent / "assets/bgd_favicon.png"
+    page_icon = Path(__file__).parent / "assets/bgd_favicon.png"
 
     if not page_icon.exists():
         st.error(f"Favicon nicht gefunden unter: {page_icon.resolve()}")
@@ -88,8 +88,8 @@ def main():
     elif current_step == 6:
         show_generation_step()
 
-
     tum_footer()
+
 
 if __name__ == "__main__":
     main()

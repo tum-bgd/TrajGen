@@ -38,7 +38,7 @@ def tum_header(page_title_line1):
             .block-container {{
                 padding-top: 0rem;
             }}
-            
+
             header {{
                 visibility: hidden;
             }}
@@ -101,7 +101,7 @@ def tum_header(page_title_line1):
 
         <div class="tum-container">
             <div class="tum-main-header">
-                <a href="https://www.bgd.ed.tum.de/" title="Professorship Big Geospatial Data Management" 
+                <a href="https://www.bgd.ed.tum.de/" title="Professorship Big Geospatial Data Management"
                 style="text-decoration: none">
                 <div class="tum-text-area">
                     <div class="tum-line">Professorship Big Geospatial Data Management</div>
