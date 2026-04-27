@@ -19,16 +19,17 @@ class Obstacle:
 class FreespaceStrategy:
     def __init__(self, config: Config):
         self.config = config
+        self.is_3d = getattr(self.config, 'spatial_dimension', '2D') == '3D'
         self.rng = random.Random(config.seed)
         self.start = (
             config.get_start_point()
             if hasattr(config, "get_start_point")
-            else Point(config.x_min, config.y_min)
+            else (Point(config.x_min, config.y_min, config.z_min) if self.is_3d else Point(config.x_min, config.y_min))
         )
         self.end = (
             config.get_end_point()
             if hasattr(config, "get_end_point")
-            else Point(config.x_max, config.y_max)
+            else (Point(config.x_max, config.y_max, config.z_max) if self.is_3d else Point(config.x_max, config.y_max))
         )
         self.obstacles = self._generate_obstacles(self.config.num_obstacles)
 
@@ -75,17 +76,34 @@ class FreespaceStrategy:
                 t = len(path) / num_points
                 target_x = self.start.x + t * (self.end.x - self.start.x)
                 target_y = self.start.y + t * (self.end.y - self.start.y)
+                if self.is_3d:
+                    target_z = self.start.z + t * (self.end.z - self.start.z)
+                    deviation_z = rng.gauss(0, deviation_factor)
+                else:
+                    target_z = 0
+                    deviation_z = 0
 
                 # Add trajectory-specific deviation
                 deviation_x = rng.gauss(0, deviation_factor)
                 deviation_y = rng.gauss(0, deviation_factor)
 
-                candidate = Point(target_x + deviation_x, target_y + deviation_y)
+                if self.is_3d:
+                    candidate = Point(target_x + deviation_x, target_y + deviation_y, target_z + deviation_z)
+                else:
+                    candidate = Point(target_x + deviation_x, target_y + deviation_y)
 
                 # Clamp to bounds
-                candidate = Point(
-                    np.clip(candidate.x, 0, 1), np.clip(candidate.y, 0, 1)
-                )
+                if self.is_3d:
+                    candidate = Point(
+                        np.clip(candidate.x, self.config.x_min, self.config.x_max),
+                        np.clip(candidate.y, self.config.y_min, self.config.y_max),
+                        np.clip(candidate.z, self.config.z_min, self.config.z_max)
+                    )
+                else:
+                    candidate = Point(
+                        np.clip(candidate.x, self.config.x_min, self.config.x_max),
+                        np.clip(candidate.y, self.config.y_min, self.config.y_max)
+                    )
 
                 # Check collision-free
                 collision = any(
@@ -117,10 +135,13 @@ class FreespaceStrategy:
         ls = LineString(smoothed_points)
         return Trajectory(id=trajectory_id, ls=ls)
 
-    def _smooth_path(self, points: list[Point]) -> list[tuple[float, float]]:
+    def _smooth_path(self, points: list[Point]) -> list[tuple[float, ...]]:
         """Simple smoothing via spline interpolation."""
         if len(points) < 3:
-            return [(p.x, p.y) for p in points]
+            if self.is_3d:
+                return [(p.x, p.y, p.z) for p in points]
+            else:
+                return [(p.x, p.y) for p in points]
 
         # Catmull-Rom spline approximation (simple version)
         smoothed = []
@@ -134,8 +155,11 @@ class FreespaceStrategy:
             p1, p2 = points[idx], points[idx + 1]
             interp_x = p1.x + frac * (p2.x - p1.x)
             interp_y = p1.y + frac * (p2.y - p1.y)
-
-            smoothed.append((interp_x, interp_y))
+            if self.is_3d:
+                interp_z = p1.z + frac * (p2.z - p1.z)
+                smoothed.append((interp_x, interp_y, interp_z))
+            else:
+                smoothed.append((interp_x, interp_y))
 
         return smoothed
 
