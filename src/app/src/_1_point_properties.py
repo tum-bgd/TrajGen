@@ -1,4 +1,6 @@
 import streamlit as st
+import os
+import json
 from .utils.helper import show_available_methods_preview
 
 
@@ -318,11 +320,12 @@ def show_point_properties_step():
     st.subheader("📂 Load Configuration")
     st.write("Upload a previously downloaded configuration file to restore settings.")
 
-    uploaded_config = st.file_uploader("Upload Configuration JSON", type="json", max_upload_size=5)  # Limit to 5MB
+    uploaded_config = st.file_uploader(
+        "Upload Configuration JSON", type="json", max_upload_size=5
+    )  # Limit to 5MB
 
     if uploaded_config is not None:
         try:
-            import json
 
             config_data = json.load(uploaded_config)
 
@@ -342,6 +345,48 @@ def show_point_properties_step():
             st.error("Invalid JSON file.")
         except Exception as e:
             st.error(f"Error loading configuration: {e}")
+
+    st.write("**Or choose from existing configurations:**")
+
+    scenarios_path = os.path.join(
+        os.path.dirname(__file__), "..", "assets", "scenarios"
+    )
+
+    if os.path.exists(scenarios_path):
+        json_files = [f for f in os.listdir(scenarios_path) if f.endswith(".json")]
+        if json_files:
+            selected_config = st.selectbox(
+                "Choose Existing Configuration",
+                options=json_files,
+                index=None,
+                key="existing_config_select",
+            )
+            if selected_config:
+                config_path = os.path.join(scenarios_path, selected_config)
+                try:
+                    with open(config_path, "r") as f:
+                        config_data = json.load(f)
+                    if st.button(
+                        "Apply Selected Configuration & Skip to Preview",
+                        type="primary",
+                        key="apply_selected_config",
+                    ):
+                        for key, value in config_data.items():
+                            st.session_state[key] = value
+                        st.session_state.point_properties_locked = True
+                        st.session_state.current_step = 5
+                        st.rerun()
+                    st.success(
+                        "Configuration file loaded. Click above to apply and proceed."
+                    )
+                except json.JSONDecodeError:
+                    st.error("Invalid JSON file.")
+                except Exception as e:
+                    st.error(f"Error loading configuration: {e}")
+        else:
+            st.info("No existing configurations found.")
+    else:
+        st.info("Scenarios folder not found.")
 
     # Navigation buttons
     st.divider()
