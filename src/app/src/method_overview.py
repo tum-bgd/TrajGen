@@ -16,6 +16,7 @@ from trajgen.resampling_strategy import (
     ConstantTemporalStepResampling,
     ConstantSpatialStepResampling,
     NoiseResampling,
+    TimeTeleportResampling,
 )
 
 ALL_SPATIAL_METHODS = {
@@ -43,6 +44,7 @@ ALL_RESAMPLING_METHODS = {
     "Constant Temporal Step": ConstantTemporalStepResampling,
     "Constant Spatial Step": ConstantSpatialStepResampling,
     "Noise": NoiseResampling,
+    "Time Teleport": TimeTeleportResampling,
 }
 
 ALL_METHODS = {
@@ -65,4 +67,5 @@ ALL_METHOD_DESCRIPTIONS = {
     "Acceleration": "Derives timestamps using initial velocity and acceleration.",
     "Time Steps": "Assigns timestamps using a fixed or variable time interval between points.",
     "Noise": "Adds spatial noise (random or orthogonal) to trajectory points.",
+    "Time Teleport": "Randomly shifts trajectory segments forward or backward in time.",
 }

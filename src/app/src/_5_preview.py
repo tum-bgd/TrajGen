@@ -1,3 +1,5 @@
+import os
+
 import streamlit as st
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
@@ -227,16 +229,12 @@ def construct_trajectory_generator(config: Config) -> Trajectory:
     st.session_state["current_generator"] = generator
 
 
-def generate_and_plot_trajectory(config: Config) -> None:
-    generate_trajectory(config)
-    plot_trajectory()
-
-
 def generate_trajectory(config: Config) -> None:
     import random as _random
 
     id = st.session_state["current_id"]
-    print(f"Generating trajectory with ID {id} using current configuration...")
+    if os.getenv("DEBUG", "False").lower() == "true":
+        print(f"Generating trajectory with ID {id} using current configuration...")
     generator = st.session_state["current_generator"]
 
     # Derive a per-trajectory seed so each ID produces a unique trajectory

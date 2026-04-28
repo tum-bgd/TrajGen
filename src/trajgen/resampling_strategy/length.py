@@ -41,7 +41,7 @@ class ConstantLengthResampling:
         # Calculate cumulative distances along the original trajectory
         distances = [0.0]
         for i in range(1, len(original_coords)):
-            dist = self.config.distance(original_coords[i], original_coords[i - 1])
+            dist = self.config.distance_function(original_coords[i], original_coords[i - 1])
             distances.append(distances[-1] + dist)
 
         total_length = distances[-1]
@@ -134,6 +134,14 @@ class ConstantLengthResampling:
                 "type": "get_int_function",
                 "default": 10,
                 "description": "Target number of points for the resampled trajectory.",
+                "optional": False,
+                "default_mode": "fixed for dataset",
+            },
+            "distance_function": {
+                "short_name": "Distance Function",
+                "type": "distance_function",
+                "default": "euclidean",
+                "description": "Distance function to use for calculating trajectory lengths.",
                 "optional": False,
                 "default_mode": "fixed for dataset",
             }
