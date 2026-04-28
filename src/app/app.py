@@ -31,36 +31,48 @@ def main():
         st.session_state.current_step = 1
     if "point_properties_locked" not in st.session_state:
         st.session_state.point_properties_locked = False
+    if "max_step_reached" not in st.session_state:
+        st.session_state.max_step_reached = 1
+
+    # Update highest reached step whenever the user advances
+    st.session_state.max_step_reached = max(
+        st.session_state.max_step_reached, st.session_state.current_step
+    )
 
     # Progress indicator
-    # TODO: Refactor to use a more dynamic approach that allows jumping between already filled steps
-    progress_steps = OrderedDict(
-        [
-            ("Point Properties", 0),
-            ("Spatial Method", 0),
-            ("Temporal Method", 0),
-            ("Resampling Method", 0),
-            ("Preview", 0),
-            ("Generation", 0),
-        ]
-    )
+    progress_steps = [
+        "Point Properties",
+        "Spatial Method",
+        "Temporal Method",
+        "Resampling Method",
+        "Preview",
+        "Generation",
+    ]
     current_step = st.session_state.current_step
+    max_step_reached = st.session_state.max_step_reached
 
     # Create progress bar
-    progress_cols = st.columns(len(progress_steps.keys()))
-    for i, step_name in enumerate(progress_steps.keys()):
+    progress_cols = st.columns(len(progress_steps))
+    for i, step_name in enumerate(progress_steps):
+        step_number = i + 1
         with progress_cols[i]:
-            button_key = f"nav_button_{i+1}"
-            if i + 1 == current_step:
-                if st.button(f"**🔄 {i+1}. {step_name}**", key=button_key):
-                    st.session_state.current_step = i + 1
-            elif i + 1 < current_step:
-                if st.button(f"✅ {i+1}. {step_name}", key=button_key):
-                    st.session_state.current_step = i + 1
-                    if i + 1 == 1:  # Going back to step 1 unlocks properties
+            button_key = f"nav_button_{step_number}"
+            if step_number == current_step:
+                if st.button(f"**🔄 {step_number}. {step_name}**", key=button_key):
+                    st.session_state.current_step = step_number
+                    st.rerun()
+            elif step_number <= max_step_reached:
+                if st.button(f"✅ {step_number}. {step_name}", key=button_key):
+                    st.session_state.current_step = step_number
+                    if step_number == 1:  # Going back to step 1 unlocks properties
                         st.session_state.point_properties_locked = False
+                    st.rerun()
             else:
-                st.button(f"⭕ {i+1}. {step_name}", key=button_key, disabled=True)
+                st.button(
+                    f"⭕ {step_number}. {step_name}",
+                    key=button_key,
+                    disabled=True,
+                )
 
     st.divider()
 
