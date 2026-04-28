@@ -24,6 +24,11 @@ class NoiseResampling:
         if not coords:
             return trajectory
 
+        # Deterministic RNG for noise, based on config seed + trajectory id
+        base_seed = int(getattr(self.config, "seed", 42))
+        traj_id = int(getattr(trajectory, "id", 0))
+        rng = np.random.default_rng(base_seed + traj_id)
+
         # Convert to numpy array for easier manipulation
         coords_np = np.array(coords)
         num_points = len(coords_np)
@@ -31,13 +36,13 @@ class NoiseResampling:
 
         if noise_type == "random":
             # Add independent Gaussian noise to each coordinate
-            noise = np.random.normal(0, noise_level, coords_np.shape)
+            noise = rng.normal(0, noise_level, coords_np.shape)
             new_coords = coords_np + noise
 
         elif noise_type == "orthogonal":
             if num_points < 2:
                 # Cannot calculate direction for single point, fallback to random
-                noise = np.random.normal(0, noise_level, coords_np.shape)
+                noise = rng.normal(0, noise_level, coords_np.shape)
                 new_coords = coords_np + noise
             else:
                 new_coords = np.copy(coords_np)
@@ -82,7 +87,7 @@ class NoiseResampling:
                     # tangent to get one normal
 
                     # Generate random reference vectors
-                    random_vecs = np.random.randn(num_points, 3)
+                    random_vecs = rng.standard_normal((num_points, 3))
 
                     # Project out the component along the tangent to make it orthogonal
                     # v_orth = v - (v . t) * t
