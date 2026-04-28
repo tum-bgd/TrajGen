@@ -353,7 +353,7 @@ def show_point_properties_step():
     )
 
     if os.path.exists(scenarios_path):
-        json_files = [f for f in os.listdir(scenarios_path) if f.endswith(".json")]
+        json_files = sorted([f for f in os.listdir(scenarios_path) if f.endswith(".json")])
         if json_files:
             selected_config = st.selectbox(
                 "Choose Existing Configuration",
