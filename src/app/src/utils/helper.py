@@ -1,3 +1,5 @@
+import os
+
 from ..method_overview import (
     ALL_COMBINED_METHODS,
     ALL_RESAMPLING_METHODS,
@@ -8,7 +10,8 @@ import streamlit as st
 from trajgen.config import Config
 from trajgen.relevant_properties import Properties
 
-DEBUG = True
+
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 
 def debugger():
