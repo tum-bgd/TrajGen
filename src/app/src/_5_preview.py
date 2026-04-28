@@ -229,11 +229,6 @@ def construct_trajectory_generator(config: Config) -> Trajectory:
     st.session_state["current_generator"] = generator
 
 
-def generate_and_plot_trajectory(config: Config) -> None:
-    generate_trajectory(config)
-    plot_trajectory()
-
-
 def generate_trajectory(config: Config) -> None:
     import random as _random
 
