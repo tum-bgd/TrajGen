@@ -31,4 +31,4 @@ RUN python -m pip install --no-cache-dir \
 
 EXPOSE 3972
 
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=3972", "--server.headless=true"]
+CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=3972", "--server.headless=true", "--browser.serverAddress=trajgen.api.bgd.ed.tum.de"]
