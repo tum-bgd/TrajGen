@@ -19,6 +19,9 @@ class NoiseResampling:
         """
         noise_type = getattr(self.config, "noise_type", "random")
         noise_level = getattr(self.config, "noise_level", 1.0)
+        application_factor = float(
+            getattr(self.config, "noise_application_factor", 1.0)
+        )
 
         coords = list(trajectory.ls.coords)
         if not coords:
@@ -34,15 +37,28 @@ class NoiseResampling:
         num_points = len(coords_np)
         dim = coords_np.shape[1]
 
+        # Choose a random subset of points to receive noise based on the proportion
+        noise_prop = max(0.0, min(application_factor, 1.0))
+        if noise_prop >= 1.0:
+            noise_mask = np.ones((num_points, 1), dtype=float)
+        elif noise_prop <= 0.0:
+            noise_mask = np.zeros((num_points, 1), dtype=float)
+        else:
+            num_noise_points = int(np.round(noise_prop * num_points))
+            num_noise_points = min(num_points, max(1, num_noise_points))
+            noise_mask = np.zeros((num_points, 1), dtype=float)
+            chosen_idxs = rng.choice(num_points, size=num_noise_points, replace=False)
+            noise_mask[chosen_idxs, 0] = 1.0
+
         if noise_type == "random":
             # Add independent Gaussian noise to each coordinate
-            noise = rng.normal(0, noise_level, coords_np.shape)
+            noise = rng.normal(0, noise_level, coords_np.shape) * noise_mask
             new_coords = coords_np + noise
 
         elif noise_type == "orthogonal":
             if num_points < 2:
                 # Cannot calculate direction for single point, fallback to random
-                noise = rng.normal(0, noise_level, coords_np.shape)
+                noise = rng.normal(0, noise_level, coords_np.shape) * noise_mask
                 new_coords = coords_np + noise
             else:
                 new_coords = np.copy(coords_np)
@@ -76,10 +92,13 @@ class NoiseResampling:
                     normals[:, 1] = tangents[:, 0]
 
                     # Generate noise magnitudes
-                    magnitudes = np.random.normal(0, noise_level, num_points)
+                    magnitudes = (
+                        rng.normal(0, noise_level, num_points)[:, np.newaxis]
+                        * noise_mask
+                    )
 
                     # Apply noise along normal
-                    new_coords += normals * magnitudes[:, np.newaxis]
+                    new_coords += normals * magnitudes
 
                 elif dim == 3:
                     # In 3D, we need two orthogonal vectors to the tangent to define the normal plane
@@ -101,9 +120,12 @@ class NoiseResampling:
                     orth_vecs = orth_vecs / orth_lengths
 
                     # Generate noise magnitudes
-                    magnitudes = np.random.normal(0, noise_level, num_points)
+                    magnitudes = (
+                        rng.normal(0, noise_level, num_points)[:, np.newaxis]
+                        * noise_mask
+                    )
 
-                    new_coords += orth_vecs * magnitudes[:, np.newaxis]
+                    new_coords += orth_vecs * magnitudes
 
         else:
             # Unknown type, return original
@@ -137,6 +159,14 @@ class NoiseResampling:
                 "type": "get_float_function",
                 "default": 1.0,
                 "description": "Standard deviation of the Gaussian noise.",
+                "optional": False,
+                "default_mode": "fixed for dataset",
+            },
+            "noise_application_factor": {
+                "short_name": "Noise Application Factor",
+                "type": "get_float_function",
+                "default": 1.0,
+                "description": "Proportion of points that receive noise. A value of 0.1 means noise is applied to 10% of the trajectory points, randomly distributed.",
                 "optional": False,
                 "default_mode": "fixed for dataset",
             },
